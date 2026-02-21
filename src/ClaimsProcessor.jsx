@@ -220,17 +220,17 @@ export default function ClaimsProcessor() {
         backgroundColor: colors.surface,
         border: `1px solid ${colors.border}`,
         color: colors.text,
-        "&:hover": { backgroundColor: colors.bg },
+        "&:hover": { backgroundColor: colors.surface, color: colors.text },
       },
       formButtonPrimary: {
         backgroundColor: colors.accent,
         color: colors.bg,
         fontWeight: 700,
-        "&:hover": { backgroundColor: colors.accentDim, color: colors.text },
+        "&:hover": { backgroundColor: colors.accent, color: colors.bg },
       },
       userButtonPopoverActionButton: {
         color: colors.text,
-        "&:hover": { backgroundColor: colors.surface },
+        "&:hover": { backgroundColor: colors.card, color: colors.text },
       },
       userButtonPopoverActionButtonText: {
         color: colors.text,
@@ -246,7 +246,7 @@ export default function ClaimsProcessor() {
       userButtonTrigger: {
         focusRing: `0 0 0 2px ${colors.accent}`,
       },
-      footerActionLink: { color: colors.accent, "&:hover": { color: colors.accentDim } },
+      footerActionLink: { color: colors.accent, "&:hover": { color: colors.accent } },
     }
   };
 
@@ -275,10 +275,16 @@ export default function ClaimsProcessor() {
             height: 56, background: colors.surface, position: "sticky", top: 0, zIndex: 100
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{
-                width: 32, height: 32, background: colors.accent, borderRadius: 6,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
-              }}>⚡</div>
+              <div style={{ display: "flex", alignItems: "center", height: 32 }}>
+                <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Left Bars */}
+                  <rect x="5" y="25" width="35" height="12" rx="6" fill="#a78bfa" />
+                  <rect x="5" y="44" width="35" height="12" rx="6" fill="#7c3aed" />
+                  <rect x="5" y="63" width="35" height="12" rx="6" fill="#5b21b6" />
+                  {/* Stylized 'A' */}
+                  <path d="M55 75L72.5 25L90 75" stroke="#34d399" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
               <div>
                 <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>CLAIMSIQ</div>
                 <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC PROCESSING ENGINE</div>
@@ -554,7 +560,6 @@ export default function ClaimsProcessor() {
                     }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                         <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
-                        <span style={{ color: colors.muted, fontSize: 10 }}>W:{r.weight}</span>
                       </div>
                       <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
                       <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>

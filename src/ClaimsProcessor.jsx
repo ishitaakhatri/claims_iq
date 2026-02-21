@@ -197,347 +197,406 @@ export default function ClaimsProcessor() {
     text: "#f9fafb", muted: "#6b7280", dim: "#374151",
   };
 
+  const clerkAppearance = {
+    variables: {
+      colorPrimary: colors.accent,
+      colorBackground: colors.card,
+      colorText: colors.text,
+      colorTextSecondary: colors.muted,
+      colorInputBackground: colors.bg,
+      colorInputText: colors.text,
+      colorTextOnPrimaryBackground: colors.bg, // High contrast on amber
+      borderRadius: "6px",
+      fontFamily: "'Barlow', sans-serif",
+    },
+    elements: {
+      card: {
+        border: `1px solid ${colors.border}`,
+        background: colors.card,
+      },
+      headerTitle: { color: colors.text, fontWeight: 800 },
+      headerSubtitle: { color: colors.muted },
+      socialButtonsBlockButton: {
+        backgroundColor: colors.surface,
+        border: `1px solid ${colors.border}`,
+        color: colors.text,
+        "&:hover": { backgroundColor: colors.bg },
+      },
+      formButtonPrimary: {
+        backgroundColor: colors.accent,
+        color: colors.bg,
+        fontWeight: 700,
+        "&:hover": { backgroundColor: colors.accentDim, color: colors.text },
+      },
+      userButtonPopoverActionButton: {
+        color: colors.text,
+        "&:hover": { backgroundColor: colors.surface },
+      },
+      userButtonPopoverActionButtonText: {
+        color: colors.text,
+        fontWeight: 600,
+      },
+      userButtonPopoverActionButtonIcon: {
+        color: colors.accent,
+      },
+      userButtonPopoverCard: {
+        background: colors.card,
+        border: `1px solid ${colors.border}`
+      },
+      userButtonTrigger: {
+        focusRing: `0 0 0 2px ${colors.accent}`,
+      },
+      footerActionLink: { color: colors.accent, "&:hover": { color: colors.accentDim } },
+    }
+  };
+
   return (
     <>
       <style>{css}</style>
       {/* Show sign-in if user is logged out */}
       <SignedOut>
-        <SignIn path="/sign-in" routing="path" />
+        <div style={{
+          background: colors.bg, minHeight: "100vh", display: "flex",
+          alignItems: "center", justifyContent: "center", padding: 20
+        }}>
+          <SignIn appearance={clerkAppearance} />
+        </div>
       </SignedOut>
 
       {/* Show dashboard if user is signed in */}
       <SignedIn>
 
-      <div style={{ fontFamily: "'Barlow', sans-serif", background: colors.bg, minHeight: "100vh", color: colors.text }}>
+        <div style={{ fontFamily: "'Barlow', sans-serif", background: colors.bg, minHeight: "100vh", color: colors.text }}>
 
-        {/* ── Top Bar ── */}
-        <div style={{
-          borderBottom: `1px solid ${colors.border}`, padding: "0 24px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          height: 56, background: colors.surface, position: "sticky", top: 0, zIndex: 100
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{
-              width: 32, height: 32, background: colors.accent, borderRadius: 6,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
-            }}>⚡</div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>CLAIMSIQ</div>
-              <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC PROCESSING ENGINE</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ fontSize: 12, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
-              {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
-            </div>
-            <div style={{
-              padding: "4px 10px", background: "#052e16", border: "1px solid #166534",
-              borderRadius: 4, fontSize: 11, color: "#4ade80", fontFamily: "IBM Plex Mono", fontWeight: 700
-            }}>● LIVE</div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 0, maxWidth: 1400, margin: "0 auto" }}>
-
-          {/* ── Main Panel ── */}
-          <div style={{ padding: 24, borderRight: `1px solid ${colors.border}` }}>
-
-            {/* Upload Zone */}
-            {stage === "idle" || stage === "error" ? (
-              <div
-                onClick={() => fileRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-                style={{
-                  border: `2px dashed ${dragOver ? colors.accent : colors.dim}`,
-                  borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer",
-                  background: dragOver ? "#1c1207" : colors.card,
-                  transition: "all 0.2s", marginBottom: 24,
-                  animation: "slideIn 0.3s ease"
-                }}
-              >
-                <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
-                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Drop your claims document</div>
-                <div style={{ fontSize: 14, color: colors.muted, marginBottom: 16 }}>
-                  Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
-                </div>
-                <div style={{
-                  display: "inline-block", padding: "10px 24px",
-                  background: colors.accent, color: "#000", borderRadius: 6,
-                  fontWeight: 700, fontSize: 14
-                }}>Browse Files</div>
-                {stage === "error" && (
-                  <div style={{ marginTop: 16, padding: "10px 16px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, color: "#f87171", fontSize: 13 }}>
-                    ⚠ Error: {error}
-                  </div>
-                )}
-                <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.tiff,.tif" onChange={handleFile} style={{ display: "none" }} />
-              </div>
-            ) : stage === "processing" ? (
+          {/* ── Top Bar ── */}
+          <div style={{
+            borderBottom: `1px solid ${colors.border}`, padding: "0 24px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            height: 56, background: colors.surface, position: "sticky", top: 0, zIndex: 100
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{
-                border: `1px solid ${colors.border}`, borderRadius: 12, padding: "48px 24px",
-                textAlign: "center", background: colors.card, marginBottom: 24,
-                animation: "slideIn 0.3s ease", position: "relative", overflow: "hidden"
-              }}>
-                <div style={{
-                  position: "absolute", left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
-                  animation: "scanline 1.5s linear infinite", top: 0
-                }} />
-                <div style={{
-                  width: 48, height: 48, border: `3px solid ${colors.dim}`,
-                  borderTopColor: colors.accent, borderRadius: "50%",
-                  animation: "spin 0.8s linear infinite", margin: "0 auto 16px"
-                }} />
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Processing Document</div>
-                <div style={{ fontSize: 13, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
-                  {file?.name}
-                </div>
-                <div style={{ marginTop: 20, display: "flex", justifyContent: "center", gap: 24, fontSize: 12, color: colors.muted }}>
-                  {["Ingesting document", "Extracting fields", "Evaluating rules", "Routing decision"].map((s, i) => (
-                    <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <div style={{
-                        width: 8, height: 8, borderRadius: "50%",
-                        background: colors.accent, animation: `pulse 1.2s ${i * 0.3}s infinite`
-                      }} />
-                      {s}
-                    </div>
-                  ))}
-                </div>
+                width: 32, height: 32, background: colors.accent, borderRadius: 6,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+              }}>⚡</div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>CLAIMSIQ</div>
+                <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC PROCESSING ENGINE</div>
               </div>
-            ) : null}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ fontSize: 12, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
+                {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+              </div>
+              <div style={{
+                padding: "4px 10px", background: "#052e16", border: "1px solid #166534",
+                borderRadius: 4, fontSize: 11, color: "#4ade80", fontFamily: "IBM Plex Mono", fontWeight: 700
+              }}>● LIVE</div>
+              <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
+            </div>
+          </div>
 
-            {/* Results */}
-            {stage === "done" && extracted && evaluation && (
-              <div style={{ animation: "slideIn 0.4s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 0, maxWidth: 1400, margin: "0 auto" }}>
 
-                {/* Decision Banner */}
+            {/* ── Main Panel ── */}
+            <div style={{ padding: 24, borderRight: `1px solid ${colors.border}` }}>
+
+              {/* Upload Zone */}
+              {stage === "idle" || stage === "error" ? (
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
+                  style={{
+                    border: `2px dashed ${dragOver ? colors.accent : colors.dim}`,
+                    borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer",
+                    background: dragOver ? "#1c1207" : colors.card,
+                    transition: "all 0.2s", marginBottom: 24,
+                    animation: "slideIn 0.3s ease"
+                  }}
+                >
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Drop your claims document</div>
+                  <div style={{ fontSize: 14, color: colors.muted, marginBottom: 16 }}>
+                    Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
+                  </div>
+                  <div style={{
+                    display: "inline-block", padding: "10px 24px",
+                    background: colors.accent, color: "#000", borderRadius: 6,
+                    fontWeight: 700, fontSize: 14
+                  }}>Browse Files</div>
+                  {stage === "error" && (
+                    <div style={{ marginTop: 16, padding: "10px 16px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, color: "#f87171", fontSize: 13 }}>
+                      ⚠ Error: {error}
+                    </div>
+                  )}
+                  <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.tiff,.tif" onChange={handleFile} style={{ display: "none" }} />
+                </div>
+              ) : stage === "processing" ? (
                 <div style={{
-                  borderRadius: 10, padding: "20px 24px", marginBottom: 20,
-                  background: evaluation.routing === "STP" ? "#052e16" : "#450a0a",
-                  border: `1px solid ${evaluation.routing === "STP" ? "#166534" : "#7f1d1d"}`,
-                  display: "flex", alignItems: "center", justifyContent: "space-between"
+                  border: `1px solid ${colors.border}`, borderRadius: 12, padding: "48px 24px",
+                  textAlign: "center", background: colors.card, marginBottom: 24,
+                  animation: "slideIn 0.3s ease", position: "relative", overflow: "hidden"
                 }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 6 }}>ROUTING DECISION</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
-                      {evaluation.routing === "STP" ? "✓ Straight-Through Processing" : `⚠ Escalate to ${evaluation.escalateTo}`}
-                    </div>
-                    {evaluation.routing === "ESCALATE" && (
-                      <div style={{ fontSize: 13, color: "#fca5a5", marginTop: 6 }}>
-                        Reasons: {evaluation.escalationReasons.join(" · ")}
-                      </div>
-                    )}
+                  <div style={{
+                    position: "absolute", left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
+                    animation: "scanline 1.5s linear infinite", top: 0
+                  }} />
+                  <div style={{
+                    width: 48, height: 48, border: `3px solid ${colors.dim}`,
+                    borderTopColor: colors.accent, borderRadius: "50%",
+                    animation: "spin 0.8s linear infinite", margin: "0 auto 16px"
+                  }} />
+                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Processing Document</div>
+                  <div style={{ fontSize: 13, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
+                    {file?.name}
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, marginBottom: 4 }}>RULES PASSED</div>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
-                      {evaluation.confidence}%
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabs */}
-                <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${colors.border}`, marginBottom: 20 }}>
-                  {[
-                    { id: "extraction", label: "Extracted Data" },
-                    { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed).length}/${evaluation.results.length})` },
-                    { id: "notes", label: "AI Notes" },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-                      padding: "10px 18px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
-                      fontFamily: "'Barlow', sans-serif",
-                      background: activeTab === t.id ? colors.card : "transparent",
-                      color: activeTab === t.id ? colors.accent : colors.muted,
-                      borderBottom: activeTab === t.id ? `2px solid ${colors.accent}` : "2px solid transparent",
-                      borderRadius: "6px 6px 0 0", transition: "all 0.15s"
-                    }}>{t.label}</button>
-                  ))}
-                </div>
-
-                {/* Extraction Tab */}
-                {activeTab === "extraction" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    {[
-                      { label: "Claim Number", key: "claimNumber" },
-                      { label: "Policy Number", key: "policyNumber" },
-                      { label: "Claimant Name", key: "claimantName" },
-                      { label: "Claimant ID", key: "claimantId" },
-                      { label: "Claim Type", key: "claimType" },
-                      { label: "Claim Amount", key: "claimAmount" },
-                      { label: "Policy Status", key: "policyStatus" },
-                      { label: "Incident Date", key: "incidentDate" },
-                      { label: "Filing Date", key: "filingDate" },
-                      { label: "Provider", key: "providerName" },
-                      { label: "Contact", key: "contactNumber" },
-                      { label: "Completeness Score", key: "completeness" },
-                    ].map(({ label, key }) => (
-                      <div key={key} style={{
-                        padding: "12px 14px", background: colors.card,
-                        borderRadius: 8, border: `1px solid ${colors.border}`
-                      }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>{label.toUpperCase()}</div>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>{fmt(extracted[key])}</div>
+                  <div style={{ marginTop: 20, display: "flex", justifyContent: "center", gap: 24, fontSize: 12, color: colors.muted }}>
+                    {["Ingesting document", "Extracting fields", "Evaluating rules", "Routing decision"].map((s, i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                        <div style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: colors.accent, animation: `pulse 1.2s ${i * 0.3}s infinite`
+                        }} />
+                        {s}
                       </div>
                     ))}
-                    {extracted.claimantAddress && (
-                      <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>ADDRESS</div>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>{extracted.claimantAddress}</div>
-                      </div>
-                    )}
-                    {extracted.incidentDescription && (
-                      <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>INCIDENT DESCRIPTION</div>
-                        <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6 }}>{extracted.incidentDescription}</div>
-                      </div>
-                    )}
-                    {extracted.missingFields?.length > 0 && (
-                      <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
-                        <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>MISSING FIELDS</div>
-                        <div style={{ fontSize: 13, color: "#fcd34d" }}>{extracted.missingFields.join(", ")}</div>
-                      </div>
-                    )}
                   </div>
-                )}
-
-                {/* Rules Tab */}
-                {activeTab === "rules" && (
-                  <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{
-                      display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
-                      gap: 12, padding: "8px 14px",
-                      background: "#0d1117", fontSize: 10, color: colors.muted,
-                      fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", borderBottom: `1px solid ${colors.border}`
-                    }}>
-                      <span></span><span>RULE ID</span><span>DESCRIPTION</span><span>ACTUAL</span><span>RESULT</span>
-                    </div>
-                    {evaluation.results.map(r => <RuleRow key={r.id} rule={r} />)}
-                  </div>
-                )}
-
-                {/* Notes Tab */}
-                {activeTab === "notes" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                      <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>AI EXTRACTION NOTES</div>
-                      <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
-                    </div>
-                    <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                      <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>FRAUD RISK ASSESSMENT</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ flex: 1, height: 8, background: colors.dim, borderRadius: 4, overflow: "hidden" }}>
-                          <div style={{
-                            height: "100%", width: `${extracted.fraudScore || 0}%`,
-                            background: (extracted.fraudScore || 0) > 60 ? "#ef4444" : (extracted.fraudScore || 0) > 30 ? "#f59e0b" : "#4ade80",
-                            borderRadius: 4, transition: "width 0.8s ease"
-                          }} />
-                        </div>
-                        <span style={{ fontFamily: "IBM Plex Mono", fontSize: 14, fontWeight: 700, minWidth: 40 }}>{extracted.fraudScore ?? 0}/100</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: colors.muted, marginTop: 6 }}>
-                        {(extracted.fraudScore || 0) <= 30 ? "Low risk — proceed normally" :
-                          (extracted.fraudScore || 0) <= 60 ? "Moderate risk — manual review recommended" :
-                            "High risk — escalate to fraud investigation unit"}
-                      </div>
-                    </div>
-                    <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                      <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>SUPPORTING DOCUMENTS REFERENCED</div>
-                      <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
-                    </div>
-                    <div style={{ padding: "16px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
-                      <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>RECOMMENDED ACTIONS</div>
-                      <div style={{ fontSize: 13, color: "#fcd34d", lineHeight: 1.8 }}>
-                        {evaluation.routing === "STP"
-                          ? "✓ All rules passed. Claim can be auto-processed without manual intervention.\n✓ Generate payment authorization.\n✓ Notify claimant of approval."
-                          : `• Route to: ${evaluation.escalateTo}\n• Reason(s): ${evaluation.escalationReasons.join(", ")}\n• Assign priority: ${(extracted.fraudScore || 0) > 60 || (extracted.claimAmount || 0) > 25000 ? "HIGH" : "MEDIUM"}`
-                        }
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
-                  <button onClick={reset} style={{
-                    padding: "10px 20px", background: colors.card, border: `1px solid ${colors.border}`,
-                    borderRadius: 6, color: colors.text, cursor: "pointer", fontFamily: "'Barlow', sans-serif",
-                    fontWeight: 600, fontSize: 13, transition: "all 0.15s"
-                  }}>+ Process Another Claim</button>
                 </div>
-              </div>
-            )}
-          </div>
+              ) : null}
 
-          {/* ── Sidebar ── */}
-          <div style={{ padding: 20, background: colors.surface }}>
+              {/* Results */}
+              {stage === "done" && extracted && evaluation && (
+                <div style={{ animation: "slideIn 0.4s ease" }}>
 
-            {/* Current Status */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>CURRENT STATUS</div>
-              <StatusBadge status={stage === "processing" ? "PROCESSING" : stage === "done" ? evaluation?.routing : "IDLE"} />
-              {file && (
-                <div style={{ marginTop: 10, padding: "10px 12px", background: colors.card, borderRadius: 6, border: `1px solid ${colors.border}` }}>
-                  <div style={{ fontSize: 11, color: colors.muted, marginBottom: 3 }}>Document</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{file.name}</div>
-                  <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>{(file.size / 1024).toFixed(1)} KB</div>
+                  {/* Decision Banner */}
+                  <div style={{
+                    borderRadius: 10, padding: "20px 24px", marginBottom: 20,
+                    background: evaluation.routing === "STP" ? "#052e16" : "#450a0a",
+                    border: `1px solid ${evaluation.routing === "STP" ? "#166534" : "#7f1d1d"}`,
+                    display: "flex", alignItems: "center", justifyContent: "space-between"
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 6 }}>ROUTING DECISION</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
+                        {evaluation.routing === "STP" ? "✓ Straight-Through Processing" : `⚠ Escalate to ${evaluation.escalateTo}`}
+                      </div>
+                      {evaluation.routing === "ESCALATE" && (
+                        <div style={{ fontSize: 13, color: "#fca5a5", marginTop: 6 }}>
+                          Reasons: {evaluation.escalationReasons.join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, marginBottom: 4 }}>RULES PASSED</div>
+                      <div style={{ fontSize: 32, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
+                        {evaluation.confidence}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabs */}
+                  <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${colors.border}`, marginBottom: 20 }}>
+                    {[
+                      { id: "extraction", label: "Extracted Data" },
+                      { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed).length}/${evaluation.results.length})` },
+                      { id: "notes", label: "AI Notes" },
+                    ].map(t => (
+                      <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+                        padding: "10px 18px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                        fontFamily: "'Barlow', sans-serif",
+                        background: activeTab === t.id ? colors.card : "transparent",
+                        color: activeTab === t.id ? colors.accent : colors.muted,
+                        borderBottom: activeTab === t.id ? `2px solid ${colors.accent}` : "2px solid transparent",
+                        borderRadius: "6px 6px 0 0", transition: "all 0.15s"
+                      }}>{t.label}</button>
+                    ))}
+                  </div>
+
+                  {/* Extraction Tab */}
+                  {activeTab === "extraction" && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      {[
+                        { label: "Claim Number", key: "claimNumber" },
+                        { label: "Policy Number", key: "policyNumber" },
+                        { label: "Claimant Name", key: "claimantName" },
+                        { label: "Claimant ID", key: "claimantId" },
+                        { label: "Claim Type", key: "claimType" },
+                        { label: "Claim Amount", key: "claimAmount" },
+                        { label: "Policy Status", key: "policyStatus" },
+                        { label: "Incident Date", key: "incidentDate" },
+                        { label: "Filing Date", key: "filingDate" },
+                        { label: "Provider", key: "providerName" },
+                        { label: "Contact", key: "contactNumber" },
+                        { label: "Completeness Score", key: "completeness" },
+                      ].map(({ label, key }) => (
+                        <div key={key} style={{
+                          padding: "12px 14px", background: colors.card,
+                          borderRadius: 8, border: `1px solid ${colors.border}`
+                        }}>
+                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>{label.toUpperCase()}</div>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>{fmt(extracted[key])}</div>
+                        </div>
+                      ))}
+                      {extracted.claimantAddress && (
+                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>ADDRESS</div>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>{extracted.claimantAddress}</div>
+                        </div>
+                      )}
+                      {extracted.incidentDescription && (
+                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>INCIDENT DESCRIPTION</div>
+                          <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6 }}>{extracted.incidentDescription}</div>
+                        </div>
+                      )}
+                      {extracted.missingFields?.length > 0 && (
+                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
+                          <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>MISSING FIELDS</div>
+                          <div style={{ fontSize: 13, color: "#fcd34d" }}>{extracted.missingFields.join(", ")}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Rules Tab */}
+                  {activeTab === "rules" && (
+                    <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: "hidden" }}>
+                      <div style={{
+                        display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
+                        gap: 12, padding: "8px 14px",
+                        background: "#0d1117", fontSize: 10, color: colors.muted,
+                        fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", borderBottom: `1px solid ${colors.border}`
+                      }}>
+                        <span></span><span>RULE ID</span><span>DESCRIPTION</span><span>ACTUAL</span><span>RESULT</span>
+                      </div>
+                      {evaluation.results.map(r => <RuleRow key={r.id} rule={r} />)}
+                    </div>
+                  )}
+
+                  {/* Notes Tab */}
+                  {activeTab === "notes" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>AI EXTRACTION NOTES</div>
+                        <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
+                      </div>
+                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>FRAUD RISK ASSESSMENT</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ flex: 1, height: 8, background: colors.dim, borderRadius: 4, overflow: "hidden" }}>
+                            <div style={{
+                              height: "100%", width: `${extracted.fraudScore || 0}%`,
+                              background: (extracted.fraudScore || 0) > 60 ? "#ef4444" : (extracted.fraudScore || 0) > 30 ? "#f59e0b" : "#4ade80",
+                              borderRadius: 4, transition: "width 0.8s ease"
+                            }} />
+                          </div>
+                          <span style={{ fontFamily: "IBM Plex Mono", fontSize: 14, fontWeight: 700, minWidth: 40 }}>{extracted.fraudScore ?? 0}/100</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: colors.muted, marginTop: 6 }}>
+                          {(extracted.fraudScore || 0) <= 30 ? "Low risk — proceed normally" :
+                            (extracted.fraudScore || 0) <= 60 ? "Moderate risk — manual review recommended" :
+                              "High risk — escalate to fraud investigation unit"}
+                        </div>
+                      </div>
+                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>SUPPORTING DOCUMENTS REFERENCED</div>
+                        <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
+                      </div>
+                      <div style={{ padding: "16px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
+                        <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>RECOMMENDED ACTIONS</div>
+                        <div style={{ fontSize: 13, color: "#fcd34d", lineHeight: 1.8 }}>
+                          {evaluation.routing === "STP"
+                            ? "✓ All rules passed. Claim can be auto-processed without manual intervention.\n✓ Generate payment authorization.\n✓ Notify claimant of approval."
+                            : `• Route to: ${evaluation.escalateTo}\n• Reason(s): ${evaluation.escalationReasons.join(", ")}\n• Assign priority: ${(extracted.fraudScore || 0) > 60 || (extracted.claimAmount || 0) > 25000 ? "HIGH" : "MEDIUM"}`
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={reset} style={{
+                      padding: "10px 20px", background: colors.card, border: `1px solid ${colors.border}`,
+                      borderRadius: 6, color: colors.text, cursor: "pointer", fontFamily: "'Barlow', sans-serif",
+                      fontWeight: 600, fontSize: 13, transition: "all 0.15s"
+                    }}>+ Process Another Claim</button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Business Rules Reference */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {BUSINESS_RULES.map(r => (
-                  <div key={r.id} style={{
-                    padding: "8px 10px", background: colors.card, borderRadius: 6,
-                    border: `1px solid ${colors.border}`, fontSize: 11
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                      <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
-                      <span style={{ color: colors.muted, fontSize: 10 }}>W:{r.weight}</span>
-                    </div>
-                    <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* ── Sidebar ── */}
+            <div style={{ padding: 20, background: colors.surface }}>
 
-            {/* Processing Log */}
-            <div>
-              <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>
-                PROCESSING LOG {claimsLog.length > 0 && `(${claimsLog.length})`}
+              {/* Current Status */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>CURRENT STATUS</div>
+                <StatusBadge status={stage === "processing" ? "PROCESSING" : stage === "done" ? evaluation?.routing : "IDLE"} />
+                {file && (
+                  <div style={{ marginTop: 10, padding: "10px 12px", background: colors.card, borderRadius: 6, border: `1px solid ${colors.border}` }}>
+                    <div style={{ fontSize: 11, color: colors.muted, marginBottom: 3 }}>Document</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{file.name}</div>
+                    <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>{(file.size / 1024).toFixed(1)} KB</div>
+                  </div>
+                )}
               </div>
-              {claimsLog.length === 0 ? (
-                <div style={{ fontSize: 12, color: colors.muted, fontStyle: "italic", padding: "10px 0" }}>No claims processed yet</div>
-              ) : (
+
+              {/* Business Rules Reference */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {claimsLog.map(c => (
-                    <div key={c.id} style={{
+                  {BUSINESS_RULES.map(r => (
+                    <div key={r.id} style={{
                       padding: "8px 10px", background: colors.card, borderRadius: 6,
-                      border: `1px solid ${c.routing === "STP" ? "#166534" : "#7f1d1d"}`,
-                      fontSize: 11, animation: "slideIn 0.3s ease"
+                      border: `1px solid ${colors.border}`, fontSize: 11
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                        <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#4ade80" : "#f87171" }}>
-                          {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
-                        </span>
-                        <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 10 }}>{c.time}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
+                        <span style={{ color: colors.muted, fontSize: 10 }}>W:{r.weight}</span>
                       </div>
-                      <div style={{ color: "#d1d5db" }}>{c.claimant}</div>
-                      <div style={{ color: colors.muted, fontSize: 10 }}>
-                        {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
-                      </div>
+                      <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
+
+              {/* Processing Log */}
+              <div>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>
+                  PROCESSING LOG {claimsLog.length > 0 && `(${claimsLog.length})`}
+                </div>
+                {claimsLog.length === 0 ? (
+                  <div style={{ fontSize: 12, color: colors.muted, fontStyle: "italic", padding: "10px 0" }}>No claims processed yet</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {claimsLog.map(c => (
+                      <div key={c.id} style={{
+                        padding: "8px 10px", background: colors.card, borderRadius: 6,
+                        border: `1px solid ${c.routing === "STP" ? "#166534" : "#7f1d1d"}`,
+                        fontSize: 11, animation: "slideIn 0.3s ease"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#4ade80" : "#f87171" }}>
+                            {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
+                          </span>
+                          <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 10 }}>{c.time}</span>
+                        </div>
+                        <div style={{ color: "#d1d5db" }}>{c.claimant}</div>
+                        <div style={{ color: colors.muted, fontSize: 10 }}>
+                          {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
-       </SignedIn>
+      </SignedIn>
 
     </>
   );

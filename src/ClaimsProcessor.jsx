@@ -56,8 +56,315 @@ function evaluateRules(extracted) {
   return { results, routing, confidence, escalationReasons, escalateTo };
 }
 
+// ─── Azure Document Intelligence API Call ────────────────────────────────────
+async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
+  console.log("🔵 [Azure Doc Intelligence] Starting extraction for:", fileName);
+  
+  const endpoint = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_ENDPOINT;
+  const apiKey = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_KEY;
+
+  if (!endpoint || !apiKey) {
+    console.warn("⚠️  [Azure Doc Intelligence] Credentials not configured, falling back to OpenAI");
+    return null;
+  }
+
+  try {
+    console.log("🔵 [Azure Doc Intelligence] Endpoint:", endpoint);
+    console.log("🔵 [Azure Doc Intelligence] File type:", fileType);
+
+    // Determine model based on document type
+    let modelId = "prebuilt-read"; // Default general document model
+    
+    console.log("🔵 [Azure Doc Intelligence] Using model:", modelId);
+
+    // Create FormData
+    const formData = new FormData();
+    
+    // Convert base64 back to Blob
+    if (fileType.startsWith("image/") || fileType === "application/pdf") {
+      const binaryString = atob(fileData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: fileType });
+      formData.append("file", blob, fileName);
+    } else {
+      formData.append("file", fileData);
+    }
+
+    const url = `${endpoint}documentintelligence/documentModels/${modelId}:analyze?api-version=2024-02-29-preview`;
+    
+    // Fallback: Try layout API if model-specific fails
+    let urlToTry = url;
+    const fallbackUrl = `${endpoint}documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-02-29-preview`;
+    
+    console.log("🔵 [Azure Doc Intelligence] Request URL:", urlToTry);
+    console.log("🔵 [Azure Doc Intelligence] Fallback URL: ", fallbackUrl);
+    console.log("🔵 [Azure Doc Intelligence] FormData keys:", Array.from(formData.keys()));
+    console.log("🔵 [Azure Doc Intelligence] Sending request...");
+
+    let response = await fetch(urlToTry, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": apiKey,
+      },
+      body: formData
+    });
+
+    // If 404, try without "prebuilt-" prefix
+    if (response.status === 404) {
+      console.warn("🔵 [Azure Doc Intelligence] Model not found, trying without prebuilt- prefix...");
+      const simpleUrl = url.replace(`:${modelId}:`, `:${modelId.replace('prebuilt-', '')}:`);
+      response = await fetch(simpleUrl, {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": apiKey,
+        },
+        body: formData.clone()
+      });
+    }
+
+    // If still 404, try layout API
+    if (response.status === 404) {
+      console.warn("🔵 [Azure Doc Intelligence] Trying fallback layout API...");
+      response = await fetch(fallbackUrl, {
+        method: "POST",
+        headers: {
+          "Ocp-Apim-Subscription-Key": apiKey,
+        },
+        body: formData.clone()
+      });
+    }
+
+    console.log("🔵 [Azure Doc Intelligence] Response status:", response.status);
+    console.log("🔵 [Azure Doc Intelligence] Response headers:", {
+      contentType: response.headers.get("content-type"),
+      location: response.headers.get("location"),
+      operationLocation: response.headers.get("operation-location")
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ [Azure Doc Intelligence] HTTP Error:", response.status, errorText);
+      return null;
+    }
+
+    // Azure returns 202 with operation-location for async processing
+    if (response.status === 202) {
+      const operationLocation = response.headers.get("operation-location");
+      console.log("🔵 [Azure Doc Intelligence] Async processing - Operation Location:", operationLocation);
+      
+      if (!operationLocation) {
+        console.error("❌ [Azure Doc Intelligence] No operation-location header in 202 response");
+        return null;
+      }
+
+      // Poll for results
+      let result = null;
+      let attempts = 0;
+      const maxAttempts = 30; // 30 seconds total
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        attempts++;
+        
+        console.log(`🔵 [Azure Doc Intelligence] Polling attempt ${attempts}/${maxAttempts}...`);
+        
+        const statusResponse = await fetch(operationLocation, {
+          method: "GET",
+          headers: {
+            "Ocp-Apim-Subscription-Key": apiKey,
+          }
+        });
+
+        console.log(`🔵 [Azure Doc Intelligence] Poll response status:`, statusResponse.status);
+        
+        if (!statusResponse.ok) {
+          const errorText = await statusResponse.text();
+          console.error("❌ [Azure Doc Intelligence] Poll error:", errorText);
+          continue;
+        }
+
+        const pollResult = await statusResponse.json();
+        console.log(`🔵 [Azure Doc Intelligence] Poll response keys:`, Object.keys(pollResult));
+        console.log(`🔵 [Azure Doc Intelligence] Poll response:`, pollResult);
+        
+        if (pollResult.status === "succeeded") {
+          console.log("✅ [Azure Doc Intelligence] Processing succeeded!");
+          result = pollResult;
+          break;
+        } else if (pollResult.status === "failed") {
+          console.error("❌ [Azure Doc Intelligence] Processing failed:", pollResult.error);
+          return null;
+        }
+        
+        console.log(`🔵 [Azure Doc Intelligence] Status: ${pollResult.status}, continuing...`);
+      }
+
+      if (!result) {
+        console.error("❌ [Azure Doc Intelligence] Timeout waiting for results");
+        return null;
+      }
+
+      const analyzeResult = result.analyzeResult || result;
+      console.log("🔵 [Azure Doc Intelligence] Received async result");
+      return processAzureResponse(analyzeResult);
+    } else {
+      // Synchronous response (200 status)
+      const responseData = await response.json();
+      console.log("🔵 [Azure Doc Intelligence] Sync response received");
+      const analyzeResult = responseData.analyzeResult || responseData;
+      return processAzureResponse(analyzeResult);
+    }
+  } catch (error) {
+    console.error("❌ [Azure Doc Intelligence] Exception:", error.message);
+    console.error("❌ [Azure Doc Intelligence] Stack:", error.stack);
+    return null;
+  }
+}
+
+function processAzureResponse(analyzeResult) {
+  console.log("🔵 [Azure Doc Intelligence] Processing response");
+  console.log("🔵 [Azure Doc Intelligence] AnalyzeResult keys:", Object.keys(analyzeResult || {}));
+  
+  // Handle structured documents (user-defined models)
+  if (analyzeResult?.documents) {
+    console.log("🔵 [Azure Doc Intelligence] Detected structured document format");
+    console.log("🔵 [Azure Doc Intelligence] Document count:", analyzeResult.documents.length);
+    console.log("🔵 [Azure Doc Intelligence] All available field keys:", Object.keys(analyzeResult.documents[0]?.fields || {}));
+
+    const extracted = {
+      claimNumber: analyzeResult?.documents?.[0]?.fields?.claimNumber?.value || null,
+      claimantName: analyzeResult?.documents?.[0]?.fields?.claimantName?.value || null,
+      claimantId: analyzeResult?.documents?.[0]?.fields?.claimantId?.value || null,
+      policyNumber: analyzeResult?.documents?.[0]?.fields?.policyNumber?.value || null,
+      policyStatus: analyzeResult?.documents?.[0]?.fields?.policyStatus?.value || "unknown",
+      claimType: analyzeResult?.documents?.[0]?.fields?.claimType?.value || null,
+      claimAmount: analyzeResult?.documents?.[0]?.fields?.claimAmount?.value || null,
+      currency: analyzeResult?.documents?.[0]?.fields?.currency?.value || "USD",
+      incidentDate: analyzeResult?.documents?.[0]?.fields?.incidentDate?.value || null,
+      filingDate: analyzeResult?.documents?.[0]?.fields?.filingDate?.value || null,
+      incidentDescription: analyzeResult?.documents?.[0]?.fields?.incidentDescription?.value || null,
+      claimantAddress: analyzeResult?.documents?.[0]?.fields?.claimantAddress?.value || null,
+      contactNumber: analyzeResult?.documents?.[0]?.fields?.contactNumber?.value || null,
+      supportingDocuments: analyzeResult?.documents?.[0]?.fields?.supportingDocuments?.value || [],
+      providerName: analyzeResult?.documents?.[0]?.fields?.providerName?.value || null,
+      completeness: calculateCompleteness(analyzeResult?.documents?.[0]),
+      fraudScore: 0,
+      isDuplicate: false,
+      extractionNotes: `Azure Document Intelligence extraction. Confidence: ${(analyzeResult?.documents?.[0]?.confidence || 0) * 100}%`,
+      missingFields: identifyMissingFields(analyzeResult?.documents?.[0]?.fields)
+    };
+
+    console.log("✅ [Azure Doc Intelligence] Extraction successful. Extracted fields:", extracted);
+    console.table(extracted);
+    return extracted;
+  }
+  
+  // Handle text extraction (prebuilt-read model)
+  if (analyzeResult?.content) {
+    console.log("🔵 [Azure Doc Intelligence] Detected text extraction format (prebuilt-read)");
+    console.log("🔵 [Azure Doc Intelligence] Content length:", analyzeResult.content.length);
+    console.log("🔵 [Azure Doc Intelligence] Pages count:", analyzeResult.pages?.length || 0);
+    
+    const content = analyzeResult.content;
+    const extracted = parseClaimFormText(content);
+    
+    extracted.completeness = calculateClaimCompleteness(extracted);
+    extracted.fraudScore = 0;
+    extracted.isDuplicate = false;
+    extracted.extractionNotes = "Azure Document Intelligence (prebuilt-read) extraction";
+    extracted.missingFields = identifyMissingFieldsFromExtracted(extracted);
+    
+    console.log("✅ [Azure Doc Intelligence] Text extraction successful. Extracted fields:", extracted);
+    console.table(extracted);
+    return extracted;
+  }
+
+  console.warn("🔵 [Azure Doc Intelligence] Unexpected response format. Keys:", Object.keys(analyzeResult || {}));
+  return null;
+}
+
+function parseClaimFormText(content) {
+  console.log("📋 [Parse Claim Form] Starting text parsing");
+  
+  // Helper: Extract value that comes after a label (may be on next line)
+  const extractValue = (pattern, defaultVal = null) => {
+    const regex = new RegExp(pattern, 'is');
+    const match = content.match(regex);
+    if (match) {
+      const result = match[1]?.trim();
+      console.log(`   ✓ Found ${pattern.substring(0, 25)}... = "${result}"`);
+      return result || defaultVal;
+    }
+    return defaultVal;
+  };
+
+  const extracted = {
+    claimNumber: extractValue(`CLAIM[\\s\\n]*NUMBER[\\s\\n]+([A-Z0-9\\-]+)`),
+    claimantName: extractValue(`FULL[\\s\\n]*NAME[\\s\\n]+([A-Z][^\\n]+)`) || extractValue(`PATIENT[\\s\\n]*NAME[\\s\\n]+([A-Z][^\\n]+)`),
+    claimantId: extractValue(`PATIENT[\\s\\n]*ID[\\s\\n]+([A-Z0-9\\-]+)`),
+    policyNumber: extractValue(`POLICY[\\s\\n]*NUMBER[\\s\\n]+([A-Z0-9\\-]+)`),
+    policyStatus: extractValue(`POLICY[\\s\\n]*STATUS[\\s\\n]+([A-Z]+)`, "unknown"),
+    claimType: extractValue(`CLAIM[\\s\\n]*TYPE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
+    claimAmount: (() => {
+      const val = extractValue(`TOTAL[\\s\\n]*BILLED[\\s\\n]*AMOUNT[\\s\\n]*\\$?([0-9,]+(?:\\.\\d{2})?)`);
+      return val ? parseFloat(val.replace(/,/g, '')) : null;
+    })(),
+    currency: "USD",
+    incidentDate: extractValue(`DATE[\\s\\n]*OF[\\s\\n]*SERVICE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
+    filingDate: extractValue(`FILING[\\s\\n]*DATE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
+    incidentDescription: extractValue(`CLINICAL[\\s\\n]*SUMMARY[\\s\\n]+([^\\n]{30,}?(?:\\n[^\\n]+){0,3})`),
+    claimantAddress: extractValue(`ADDRESS[\\s\\n]+([^\\n]+(?:\\n[^\\n]+)?)`),
+    contactNumber: extractValue(`PHONE[\\s\\n]+([0-9()\\s\\-]+)`),
+    supportingDocuments: [],
+    providerName: extractValue(`FACILITY[\\s\\n]*NAME[\\s\\n]+([^\\n]+?)(?:\\s{2,}|$)`),
+  };
+
+  console.log("📋 [Parse Claim Form] Parsing complete");
+  return extracted;
+}
+
+function calculateClaimCompleteness(extracted) {
+  const expectedFields = [
+    'claimNumber', 'claimantName', 'claimantId', 'policyNumber',
+    'claimAmount', 'incidentDate', 'claimType'
+  ];
+  const filled = expectedFields.filter(f => extracted[f] !== null && extracted[f] !== undefined).length;
+  const percentage = Math.round((filled / expectedFields.length) * 100);
+  console.log(`📊 [Completeness] Calculated: ${filled}/${expectedFields.length} = ${percentage}%`);
+  return percentage;
+}
+
+function identifyMissingFieldsFromExtracted(extracted) {
+  const requiredFields = ['claimNumber', 'claimantName', 'policyNumber', 'claimAmount', 'incidentDate'];
+  const missing = requiredFields.filter(field => !extracted[field]);
+  console.log(`📋 [Missing Fields] Identified: ${missing.join(", ") || "None"}`);
+  return missing;
+}
+
 // ─── OpenAI API Call ──────────────────────────────────────────────────────────
 async function extractClaimsData(fileData, fileType, fileName) {
+  console.log("📄 [Extract Claims Data] Processing file:", fileName, "Type:", fileType);
+  
+  // Try Azure Document Intelligence first
+  console.log("🔄 [Extract Claims Data] Attempting Azure Document Intelligence extraction...");
+  const azureResult = await extractWithAzureDocIntelligence(fileData, fileType, fileName);
+  
+  if (azureResult) {
+    console.log("✅ [Extract Claims Data] Using Azure Document Intelligence results");
+    // Use Azure results but enhance with fraud score from OpenAI if needed
+    return azureResult;
+  }
+  
+  // Fallback to OpenAI
+  console.log("⚠️  [Extract Claims Data] Azure failed or not configured. Falling back to OpenAI...");
+  return await extractClaimsDataOpenAI(fileData, fileType, fileName);
+}
+
+async function extractClaimsDataOpenAI(fileData, fileType, fileName) {
+  console.log("🟢 [OpenAI Extraction] Starting with file:", fileName);
   const isImage = fileType.startsWith("image/");
   const isPdf = fileType === "application/pdf";
 
@@ -95,6 +402,7 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
 
   if (isImage) {
     // For images, send as base64 data URL
+    console.log("🟢 [OpenAI Extraction] Processing as image");
     messageContent.push({
       type: "image_url",
       image_url: { url: `data:${fileType};base64,${fileData}` }
@@ -102,12 +410,14 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
     messageContent.push({ type: "text", text: "Extract all claims information from this document image." });
   } else {
     // For PDF and text documents, send as text
+    console.log("🟢 [OpenAI Extraction] Processing as text/PDF");
     const textContent = isPdf 
       ? `This is a PDF document (filename: ${fileName}). Extract all claims information from this PDF document content.\n\nContent: ${fileData.substring(0, 3000)}`
       : `Extract claims information from this document content (filename: ${fileName}).\n\nContent: ${fileData.substring(0, 3000)}`;
     messageContent = [{ type: "text", text: textContent }];
   }
 
+  console.log("🟢 [OpenAI Extraction] Sending request to OpenAI...");
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { 
@@ -124,28 +434,36 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
     })
   });
 
+  console.log("🟢 [OpenAI Extraction] Response status:", response.status);
+
   if (!response.ok) {
     const errorData = await response.json();
+    console.error("❌ [OpenAI Extraction] Error:", errorData.error?.message);
     throw new Error(`OpenAI API Error: ${errorData.error?.message || response.statusText}`);
   }
 
   const data = await response.json();
   
   if (!data.choices || !data.choices[0]) {
-    console.error("Unexpected API response:", data);
+    console.error("❌ [OpenAI Extraction] Unexpected API response:", data);
     throw new Error("Invalid API response - no choices returned");
   }
 
   const text = data.choices[0]?.message?.content || "{}";
+  console.log("🟢 [OpenAI Extraction] Received response, parsing...");
   const clean = text.replace(/```json|```/g, "").trim();
 
   try {
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+    console.log("✅ [OpenAI Extraction] Successfully parsed JSON");
+    return parsed;
   } catch (e) {
-    console.error("JSON Parse Error:", e);
-    console.error("Response text:", clean);
+    console.error("❌ [OpenAI Extraction] JSON Parse Error:", e.message);
+    console.error("❌ [OpenAI Extraction] Response text:", clean.substring(0, 200));
     const match = clean.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : {};
+    const result = match ? JSON.parse(match[0]) : {};
+    console.log("✅ [OpenAI Extraction] Recovered from parse error");
+    return result;
   }
 }
 
@@ -226,6 +544,7 @@ export default function ClaimsProcessor() {
   const fileRef = useRef();
 
   const process = useCallback(async (f) => {
+    console.log("📥 [Process] File selected:", f.name, "Size:", f.size, "bytes", "Type:", f.type);
     setFile(f);
     setStage("processing");
     setError(null);
@@ -233,9 +552,16 @@ export default function ClaimsProcessor() {
     setEvaluation(null);
 
     try {
+      console.log("📥 [Process] Converting file to base64...");
       const b64 = await fileToBase64(f);
+      console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
+      
+      console.log("📥 [Process] Starting data extraction...");
       const data = await extractClaimsData(b64, f.type, f.name);
+      console.log("📥 [Process] Extraction complete. Evaluating rules...");
+      
       const ev = evaluateRules(data);
+      console.log("📥 [Process] Rules evaluation complete. Routing:", ev.routing, "Confidence:", ev.confidence + "%");
 
       setExtracted(data);
       setEvaluation(ev);
@@ -253,6 +579,8 @@ export default function ClaimsProcessor() {
         confidence: ev.confidence,
       }, ...prev.slice(0, 9)]);
     } catch (e) {
+      console.error("❌ [Process] Error occurred:", e.message);
+      console.error("❌ [Process] Full error:", e);
       setError(e.message);
       setStage("error");
     }

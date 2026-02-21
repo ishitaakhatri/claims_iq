@@ -73,37 +73,78 @@ def extraction_node(state: ClaimsState):
 # Individual Rule Nodes
 def rule_br001_node(state: ClaimsState):
     print("---RULE NODE BR001---")
-    rule = BUSINESS_RULES[0]
+    rule = BUSINESS_RULES[0].copy()
+    config = (state.get("rule_config") or {}).get("BR001", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+    
+    if "threshold" in config:
+        rule["value"] = config["threshold"]
+        
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
 def rule_br002_node(state: ClaimsState):
     print("---RULE NODE BR002---")
-    rule = BUSINESS_RULES[1]
+    rule = BUSINESS_RULES[1].copy()
+    config = (state.get("rule_config") or {}).get("BR002", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+        
+    if "threshold" in config:
+        rule["value"] = config["threshold"]
+        
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
 def rule_br003_node(state: ClaimsState):
     print("---RULE NODE BR003---")
-    rule = BUSINESS_RULES[2]
+    rule = BUSINESS_RULES[2].copy()
+    config = (state.get("rule_config") or {}).get("BR003", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+        
+    if "threshold" in config:
+        rule["value"] = config["threshold"]
+        
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
 def rule_br004_node(state: ClaimsState):
     print("---RULE NODE BR004---")
-    rule = BUSINESS_RULES[3]
+    rule = BUSINESS_RULES[3].copy()
+    config = (state.get("rule_config") or {}).get("BR004", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+        
+    if "threshold" in config:
+        rule["value"] = config["threshold"]
+        
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
 def rule_br005_node(state: ClaimsState):
     print("---RULE NODE BR005---")
-    rule = BUSINESS_RULES[4]
+    rule = BUSINESS_RULES[4].copy()
+    config = (state.get("rule_config") or {}).get("BR005", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+        
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
 def rule_br006_node(state: ClaimsState):
     print("---RULE NODE BR006---")
-    rule = BUSINESS_RULES[5]
+    rule = BUSINESS_RULES[5].copy()
+    config = (state.get("rule_config") or {}).get("BR006", {})
+    
+    if not config.get("enabled", True):
+        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
     
     # Simple duplicate check logic
     current_claim_num = state["extracted_data"].get("claimNumber")
@@ -137,11 +178,14 @@ def evaluation_node(state: ClaimsState):
     # Sort results by rule ID to maintain consistency
     results = sorted(results, key=lambda x: x["id"])
     
-    stp = all(r["passed"] for r in results)
-    escalation_reasons = [r["name"] for r in results if not r["passed"]]
+    # Filter out active results (exclude skipped for calculations)
+    active_results = [r for r in results if r.get("status") != "SKIPPED"]
     
-    pass_count = len([r for r in results if r["passed"]])
-    confidence = round((pass_count / len(BUSINESS_RULES)) * 100) if BUSINESS_RULES else 0
+    stp = all(r["passed"] for r in active_results) if active_results else True
+    escalation_reasons = [r["name"] for r in active_results if not r["passed"]]
+    
+    pass_count = len([r for r in active_results if r["passed"]])
+    confidence = round((pass_count / len(active_results)) * 100) if active_results else 100
     routing = "STP" if stp else "ESCALATE"
     
     # Simple escalation mapping

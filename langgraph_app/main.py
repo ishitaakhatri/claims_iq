@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ class ClaimRequest(BaseModel):
     file_data: str  # Base64
     file_type: str
     file_name: str
+    rule_config: Optional[dict] = None
 
 @app.post("/process-claim")
 async def process_claim(request: ClaimRequest):
@@ -35,6 +37,7 @@ async def process_claim(request: ClaimRequest):
         "ocr_content": None,
         "extracted_data": None,
         "rule_results": [],
+        "rule_config": request.rule_config,
         "evaluation": None,
         "routing": None,
         "error": None

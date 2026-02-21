@@ -4,16 +4,17 @@ import { useState, useCallback, useRef } from "react";
 
 // ─── Business Rules Engine ────────────────────────────────────────────────────
 const BUSINESS_RULES = [
-  { id: "BR001", name: "Claim Amount Threshold", description: "Claims ≤ $5,000 auto-approved", field: "claimAmount", operator: "lte", value: 5000, weight: 30 },
-  { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", field: "claimAmount", operator: "lte", value: 25000, weight: 40 },
-  { id: "BR003", name: "Document Completeness", description: "All required fields must be present", field: "completeness", operator: "gte", value: 80, weight: 25 },
-  { id: "BR004", name: "Fraud Indicators", description: "No fraud flags detected", field: "fraudScore", operator: "lte", value: 30, weight: 50 },
+  { id: "BR001", name: "Claim Amount Threshold", description: "Claims ≤ $5,000 auto-approved", field: "claimAmount", operator: "lte", value: 5000, weight: 30, hasThreshold: true, min: 1000, max: 50000, step: 1000 },
+  { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", field: "claimAmount", operator: "lte", value: 25000, weight: 40, hasThreshold: true, min: 5000, max: 100000, step: 5000 },
+  { id: "BR003", name: "Document Completeness", description: "All required fields must be present", field: "completeness", operator: "gte", value: 80, weight: 25, hasThreshold: true, min: 50, max: 100, step: 5 },
+  { id: "BR004", name: "Fraud Indicators", description: "No fraud flags detected", field: "fraudScore", operator: "lte", value: 30, weight: 50, hasThreshold: true, min: 0, max: 100, step: 5 },
   { id: "BR005", name: "Policy Active Status", description: "Policy must be active at time of claim", field: "policyStatus", operator: "eq", value: "active", weight: 35 },
   { id: "BR006", name: "Duplicate Claim Check", description: "No duplicate claim reference found", field: "isDuplicate", operator: "eq", value: false, weight: 45 },
 ];
 
+
 // ─── LangGraph Backend API Call ──────────────────────────────────────────────
-async function processClaimWithLangGraph(fileData, fileType, fileName) {
+async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig) {
   console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
   try {
@@ -26,8 +27,10 @@ async function processClaimWithLangGraph(fileData, fileType, fileName) {
         file_data: fileData,
         file_type: fileType,
         file_name: fileName,
+        rule_config: ruleConfig,
       }),
     });
+
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -80,33 +83,36 @@ function StatusBadge({ status }) {
 }
 
 function RuleRow({ rule }) {
+  const isSkipped = rule.status === "SKIPPED";
   return (
     <div style={{
       display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
       gap: 12, padding: "10px 14px", borderBottom: "1px solid #1f2937",
-      alignItems: "center", fontSize: 13
+      alignItems: "center", fontSize: 13,
+      opacity: isSkipped ? 0.5 : 1
     }}>
-      <span style={{ fontSize: 16 }}>{rule.passed ? "✓" : "✗"}</span>
+      <span style={{ fontSize: 16 }}>{isSkipped ? "○" : rule.passed ? "✓" : "✗"}</span>
       <span style={{
         fontFamily: "'Courier New', monospace", fontSize: 11,
-        color: rule.passed ? "#4ade80" : "#f87171", fontWeight: 700
+        color: isSkipped ? "#6b7280" : rule.passed ? "#4ade80" : "#f87171", fontWeight: 700
       }}>{rule.id}</span>
       <div>
-        <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: 12 }}>{rule.name}</div>
-        <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>{rule.description}</div>
+        <div style={{ color: isSkipped ? "#6b7280" : "#e5e7eb", fontWeight: 600, fontSize: 12 }}>{rule.name}</div>
+        <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>{isSkipped ? "Skipped by configuration" : rule.description}</div>
       </div>
       <span style={{ color: "#9ca3af", fontSize: 12, fontFamily: "monospace" }}>
-        {rule.actual !== undefined ? String(rule.actual) : "—"}
+        {isSkipped ? "—" : rule.actual !== undefined ? String(rule.actual) : "—"}
       </span>
       <span style={{
         padding: "2px 8px", borderRadius: 3, fontSize: 11, fontWeight: 700, textAlign: "center",
-        background: rule.passed ? "#052e16" : "#450a0a",
-        color: rule.passed ? "#4ade80" : "#f87171",
-        border: `1px solid ${rule.passed ? "#166534" : "#7f1d1d"}`
-      }}>{rule.passed ? "PASS" : "FAIL"}</span>
+        background: isSkipped ? "#1f2937" : rule.passed ? "#052e16" : "#450a0a",
+        color: isSkipped ? "#9ca3af" : rule.passed ? "#4ade80" : "#f87171",
+        border: `1px solid ${isSkipped ? "#374151" : rule.passed ? "#166534" : "#7f1d1d"}`
+      }}>{isSkipped ? "SKIP" : rule.passed ? "PASS" : "FAIL"}</span>
     </div>
   );
 }
+
 
 export default function ClaimsProcessor() {
   const [stage, setStage] = useState("idle"); // idle | processing | done | error
@@ -117,7 +123,14 @@ export default function ClaimsProcessor() {
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState("extraction");
   const [claimsLog, setClaimsLog] = useState([]);
+  const [ruleConfig, setRuleConfig] = useState(
+    BUSINESS_RULES.reduce((acc, rule) => ({
+      ...acc,
+      [rule.id]: { enabled: true, threshold: rule.value }
+    }), {})
+  );
   const fileRef = useRef();
+
 
   const process = useCallback(async (f) => {
     console.log("📥 [Process] File selected:", f.name, "Size:", f.size, "bytes", "Type:", f.type);
@@ -133,7 +146,8 @@ export default function ClaimsProcessor() {
       console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
 
       console.log("📥 [Process] Starting LangGraph Backend execution...");
-      const result = await processClaimWithLangGraph(b64, f.type, f.name);
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig);
+
 
       const { extracted_data, evaluation } = result;
       console.log("✅ [Process] Backend complete. Routing:", evaluation.routing, "Confidence:", evaluation.confidence + "%");
@@ -159,10 +173,11 @@ export default function ClaimsProcessor() {
       setError(e.message);
       setStage("error");
     }
-  }, []);
+  }, [ruleConfig]);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragOver(false);
     const f = e.dataTransfer.files[0];
     if (f) process(f);
@@ -296,7 +311,7 @@ export default function ClaimsProcessor() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 0, maxWidth: 1400, margin: "0 auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 0, maxWidth: 1440, margin: "0 auto", height: "calc(100vh - 56px)" }}>
 
             {/* ── Main Panel ── */}
             <div style={{ padding: 24, borderRight: `1px solid ${colors.border}` }}>
@@ -305,19 +320,23 @@ export default function ClaimsProcessor() {
               {stage === "idle" || stage === "error" ? (
                 <div
                   onClick={() => fileRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
                   onDrop={handleDrop}
                   style={{
                     border: `2px dashed ${dragOver ? colors.accent : colors.dim}`,
-                    borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer",
-                    background: dragOver ? "#1c1207" : colors.card,
-                    transition: "all 0.2s", marginBottom: 24,
-                    animation: "slideIn 0.3s ease"
+                    borderRadius: 16, padding: "120px 40px", textAlign: "center", cursor: "pointer",
+                    background: dragOver ? "rgba(245, 158, 11, 0.05)" : colors.card,
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", marginBottom: 24,
+                    minHeight: "500px", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center",
+                    boxShadow: dragOver ? `0 0 40px ${colors.accent + "22"}` : "none",
+                    animation: "slideIn 0.4s ease-out"
                   }}
                 >
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Drop your claims document</div>
+                  <div style={{ fontSize: 64, marginBottom: 20, filter: dragOver ? "drop-shadow(0 0 10px #f59e0b)" : "none", transition: "all 0.3s" }}>📄</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em" }}>Drop your claims document</div>
                   <div style={{ fontSize: 14, color: colors.muted, marginBottom: 16 }}>
                     Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
                   </div>
@@ -528,7 +547,58 @@ export default function ClaimsProcessor() {
             </div>
 
             {/* ── Sidebar ── */}
-            <div style={{ padding: 20, background: colors.surface }}>
+            <div style={{ padding: 20, background: colors.surface, maxHeight: "100vh", overflowY: "auto" }}>
+
+              {/* Analysis Settings */}
+              <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: `1px solid ${colors.border}` }}>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 16, fontWeight: 700 }}>ANALYSIS SETTINGS</div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {BUSINESS_RULES.map(rule => (
+                    <div key={rule.id} style={{ background: colors.card, padding: 12, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: rule.hasThreshold ? 12 : 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={ruleConfig[rule.id].enabled}
+                            onChange={(e) => setRuleConfig(prev => ({
+                              ...prev,
+                              [rule.id]: { ...prev[rule.id], enabled: e.target.checked }
+                            }))}
+                            style={{ cursor: "pointer", accentColor: colors.accent }}
+                          />
+                          <span style={{ fontSize: 12, fontWeight: 600, color: ruleConfig[rule.id].enabled ? colors.text : colors.muted }}>{rule.name}</span>
+                        </div>
+                        <span style={{ fontFamily: "IBM Plex Mono", fontSize: 10, color: colors.muted }}>{rule.id}</span>
+                      </div>
+
+                      {rule.hasThreshold && ruleConfig[rule.id].enabled && (
+                        <div>
+                          <input
+                            type="range"
+                            min={rule.min}
+                            max={rule.max}
+                            step={rule.step}
+                            value={ruleConfig[rule.id].threshold}
+                            onChange={(e) => setRuleConfig(prev => ({
+                              ...prev,
+                              [rule.id]: { ...prev[rule.id], threshold: Number(e.target.value) }
+                            }))}
+                            style={{ width: "100%", accentColor: colors.accent, height: 4, cursor: "pointer" }}
+                          />
+                          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                            <span style={{ fontSize: 10, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.min.toLocaleString()}` : `${rule.min}%`}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: colors.accent }}>
+                              {rule.field === "claimAmount" ? `$${ruleConfig[rule.id].threshold.toLocaleString()}` : `${ruleConfig[rule.id].threshold}%`}
+                            </span>
+                            <span style={{ fontSize: 10, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.max.toLocaleString()}` : `${rule.max}%`}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Current Status */}
               <div style={{ marginBottom: 20 }}>
@@ -541,26 +611,6 @@ export default function ClaimsProcessor() {
                     <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>{(file.size / 1024).toFixed(1)} KB</div>
                   </div>
                 )}
-              </div>
-
-              {/* Business Rules Reference */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {BUSINESS_RULES.map(r => (
-                    <div key={r.id} style={{
-                      padding: "8px 10px", background: colors.card, borderRadius: 6,
-                      border: `1px solid ${colors.border}`, fontSize: 11
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
-                        <span style={{ color: colors.muted, fontSize: 10 }}>W:{r.weight}</span>
-                      </div>
-                      <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               {/* Processing Log */}

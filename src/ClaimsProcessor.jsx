@@ -1,3 +1,5 @@
+import { SignedIn, SignedOut, SignIn, UserButton } from "@clerk/clerk-react"
+
 import { useState, useCallback, useRef } from "react";
 
 // ─── Business Rules Engine ────────────────────────────────────────────────────
@@ -198,6 +200,14 @@ export default function ClaimsProcessor() {
   return (
     <>
       <style>{css}</style>
+      {/* Show sign-in if user is logged out */}
+      <SignedOut>
+        <SignIn path="/sign-in" routing="path" />
+      </SignedOut>
+
+      {/* Show dashboard if user is signed in */}
+      <SignedIn>
+
       <div style={{ fontFamily: "'Barlow', sans-serif", background: colors.bg, minHeight: "100vh", color: colors.text }}>
 
         {/* ── Top Bar ── */}
@@ -527,6 +537,8 @@ export default function ClaimsProcessor() {
           </div>
         </div>
       </div>
+       </SignedIn>
+
     </>
   );
 }

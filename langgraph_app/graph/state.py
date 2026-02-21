@@ -17,6 +17,9 @@ class ClaimsState(TypedDict):
     # Rule evaluation results (aggregated from parallel nodes)
     rule_results: Annotated[List[dict], operator.add]
     
+    # Configuration
+    rule_config: Optional[dict]
+    
     # Outputs
     evaluation: Optional[dict]
     routing: Optional[str]

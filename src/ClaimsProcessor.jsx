@@ -619,7 +619,6 @@ export default function ClaimsProcessor() {
                 )}
               </div>
 
-<<<<<<< HEAD
               {/* Business Rules Reference */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
@@ -639,8 +638,6 @@ export default function ClaimsProcessor() {
                 </div>
               </div>
 
-=======
->>>>>>> 1ad685136a6dd1cef7f2f9060c8d1be27e0e486a
               {/* Processing Log */}
               <div>
                 <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>

@@ -3,7 +3,7 @@ import { useState, useCallback, useRef } from "react";
 // ─── Business Rules Engine ────────────────────────────────────────────────────
 const BUSINESS_RULES = [
   { id: "BR001", name: "Claim Amount Threshold", description: "Claims ≤ $5,000 auto-approved", field: "claimAmount", operator: "lte", value: 5000, weight: 30 },
-  { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", field: "claimAmount", operator: "gt", value: 25000, weight: 40 },
+  { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", field: "claimAmount", operator: "lte", value: 25000, weight: 40 },
   { id: "BR003", name: "Document Completeness", description: "All required fields must be present", field: "completeness", operator: "gte", value: 80, weight: 25 },
   { id: "BR004", name: "Fraud Indicators", description: "No fraud flags detected", field: "fraudScore", operator: "lte", value: 30, weight: 50 },
   { id: "BR005", name: "Policy Active Status", description: "Policy must be active at time of claim", field: "policyStatus", operator: "eq", value: "active", weight: 35 },
@@ -26,11 +26,11 @@ function evaluateRules(extracted) {
     } else {
       switch (rule.operator) {
         case "lte": passed = Number(rawVal) <= rule.value; break;
-        case "lt":  passed = Number(rawVal) < rule.value; break;
+        case "lt": passed = Number(rawVal) < rule.value; break;
         case "gte": passed = Number(rawVal) >= rule.value; break;
-        case "gt":  passed = Number(rawVal) > rule.value; break;
-        case "eq":  passed = rawVal === rule.value || String(rawVal).toLowerCase() === String(rule.value).toLowerCase(); break;
-        default:    passed = false;
+        case "gt": passed = Number(rawVal) > rule.value; break;
+        case "eq": passed = rawVal === rule.value || String(rawVal).toLowerCase() === String(rule.value).toLowerCase(); break;
+        default: passed = false;
       }
     }
 
@@ -48,10 +48,10 @@ function evaluateRules(extracted) {
   const escalateTo = escalationReasons.includes("High-Value Escalation") || escalationReasons.includes("Fraud Indicators")
     ? "Senior Claims Manager"
     : escalationReasons.includes("Duplicate Claim Check")
-    ? "Fraud Investigation Unit"
-    : escalationReasons.includes("Document Completeness") || escalationReasons.includes("Policy Active Status")
-    ? "Claims Specialist"
-    : "Claims Reviewer";
+      ? "Fraud Investigation Unit"
+      : escalationReasons.includes("Document Completeness") || escalationReasons.includes("Policy Active Status")
+        ? "Claims Specialist"
+        : "Claims Reviewer";
 
   return { results, routing, confidence, escalationReasons, escalateTo };
 }
@@ -59,7 +59,7 @@ function evaluateRules(extracted) {
 // ─── Azure Document Intelligence API Call ────────────────────────────────────
 async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
   console.log("🔵 [Azure Doc Intelligence] Starting extraction for:", fileName);
-  
+
   const endpoint = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_ENDPOINT;
   const apiKey = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_KEY;
 
@@ -73,13 +73,13 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
     console.log("🔵 [Azure Doc Intelligence] File type:", fileType);
 
     // Determine model based on document type
-    let modelId = "prebuilt-read"; // Default general document model
-    
+    let modelId = "prebuilt-layout"; // Use layout model for better text/structure extraction
+
     console.log("🔵 [Azure Doc Intelligence] Using model:", modelId);
 
     // Create FormData
     const formData = new FormData();
-    
+
     // Convert base64 back to Blob
     if (fileType.startsWith("image/") || fileType === "application/pdf") {
       const binaryString = atob(fileData);
@@ -94,13 +94,10 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
     }
 
     const url = `${endpoint}documentintelligence/documentModels/${modelId}:analyze?api-version=2024-02-29-preview`;
-    
-    // Fallback: Try layout API if model-specific fails
-    let urlToTry = url;
+    const urlToTry = url;
     const fallbackUrl = `${endpoint}documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-02-29-preview`;
-    
+
     console.log("🔵 [Azure Doc Intelligence] Request URL:", urlToTry);
-    console.log("🔵 [Azure Doc Intelligence] Fallback URL: ", fallbackUrl);
     console.log("🔵 [Azure Doc Intelligence] FormData keys:", Array.from(formData.keys()));
     console.log("🔵 [Azure Doc Intelligence] Sending request...");
 
@@ -111,31 +108,6 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
       },
       body: formData
     });
-
-    // If 404, try without "prebuilt-" prefix
-    if (response.status === 404) {
-      console.warn("🔵 [Azure Doc Intelligence] Model not found, trying without prebuilt- prefix...");
-      const simpleUrl = url.replace(`:${modelId}:`, `:${modelId.replace('prebuilt-', '')}:`);
-      response = await fetch(simpleUrl, {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": apiKey,
-        },
-        body: formData.clone()
-      });
-    }
-
-    // If still 404, try layout API
-    if (response.status === 404) {
-      console.warn("🔵 [Azure Doc Intelligence] Trying fallback layout API...");
-      response = await fetch(fallbackUrl, {
-        method: "POST",
-        headers: {
-          "Ocp-Apim-Subscription-Key": apiKey,
-        },
-        body: formData.clone()
-      });
-    }
 
     console.log("🔵 [Azure Doc Intelligence] Response status:", response.status);
     console.log("🔵 [Azure Doc Intelligence] Response headers:", {
@@ -154,7 +126,7 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
     if (response.status === 202) {
       const operationLocation = response.headers.get("operation-location");
       console.log("🔵 [Azure Doc Intelligence] Async processing - Operation Location:", operationLocation);
-      
+
       if (!operationLocation) {
         console.error("❌ [Azure Doc Intelligence] No operation-location header in 202 response");
         return null;
@@ -164,13 +136,13 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
       let result = null;
       let attempts = 0;
       const maxAttempts = 30; // 30 seconds total
-      
+
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
         attempts++;
-        
+
         console.log(`🔵 [Azure Doc Intelligence] Polling attempt ${attempts}/${maxAttempts}...`);
-        
+
         const statusResponse = await fetch(operationLocation, {
           method: "GET",
           headers: {
@@ -179,7 +151,7 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
         });
 
         console.log(`🔵 [Azure Doc Intelligence] Poll response status:`, statusResponse.status);
-        
+
         if (!statusResponse.ok) {
           const errorText = await statusResponse.text();
           console.error("❌ [Azure Doc Intelligence] Poll error:", errorText);
@@ -189,7 +161,7 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
         const pollResult = await statusResponse.json();
         console.log(`🔵 [Azure Doc Intelligence] Poll response keys:`, Object.keys(pollResult));
         console.log(`🔵 [Azure Doc Intelligence] Poll response:`, pollResult);
-        
+
         if (pollResult.status === "succeeded") {
           console.log("✅ [Azure Doc Intelligence] Processing succeeded!");
           result = pollResult;
@@ -198,7 +170,7 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
           console.error("❌ [Azure Doc Intelligence] Processing failed:", pollResult.error);
           return null;
         }
-        
+
         console.log(`🔵 [Azure Doc Intelligence] Status: ${pollResult.status}, continuing...`);
       }
 
@@ -209,155 +181,111 @@ async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
 
       const analyzeResult = result.analyzeResult || result;
       console.log("🔵 [Azure Doc Intelligence] Received async result");
-      return processAzureResponse(analyzeResult);
+
+      // Pass the raw content to OpenAI/LLM for intelligent field extraction
+      if (analyzeResult?.content) {
+        console.log("🔵 [Azure Doc Intelligence] Sending content to OpenAI for intelligent extraction...");
+        return await extractClaimsDataFromText(analyzeResult.content, fileName);
+      }
+
+      return null;
     } else {
       // Synchronous response (200 status)
       const responseData = await response.json();
       console.log("🔵 [Azure Doc Intelligence] Sync response received");
       const analyzeResult = responseData.analyzeResult || responseData;
-      return processAzureResponse(analyzeResult);
+
+      if (analyzeResult?.content) {
+        return await extractClaimsDataFromText(analyzeResult.content, fileName);
+      }
+      return null;
     }
   } catch (error) {
     console.error("❌ [Azure Doc Intelligence] Exception:", error.message);
-    console.error("❌ [Azure Doc Intelligence] Stack:", error.stack);
     return null;
   }
 }
 
-function processAzureResponse(analyzeResult) {
-  console.log("🔵 [Azure Doc Intelligence] Processing response");
-  console.log("🔵 [Azure Doc Intelligence] AnalyzeResult keys:", Object.keys(analyzeResult || {}));
-  
-  // Handle structured documents (user-defined models)
-  if (analyzeResult?.documents) {
-    console.log("🔵 [Azure Doc Intelligence] Detected structured document format");
-    console.log("🔵 [Azure Doc Intelligence] Document count:", analyzeResult.documents.length);
-    console.log("🔵 [Azure Doc Intelligence] All available field keys:", Object.keys(analyzeResult.documents[0]?.fields || {}));
+/**
+ * Intelligent field extraction using LLM on OCR text/layout
+ */
+async function extractClaimsDataFromText(text, fileName) {
+  const systemPrompt = `You are an expert claims processing AI. Extract structured data from the provided text content of a claims document.
+The text was generated via OCR, so there might be minor errors or layout shifts. Use your reasoning to identify the correct fields.
 
-    const extracted = {
-      claimNumber: analyzeResult?.documents?.[0]?.fields?.claimNumber?.value || null,
-      claimantName: analyzeResult?.documents?.[0]?.fields?.claimantName?.value || null,
-      claimantId: analyzeResult?.documents?.[0]?.fields?.claimantId?.value || null,
-      policyNumber: analyzeResult?.documents?.[0]?.fields?.policyNumber?.value || null,
-      policyStatus: analyzeResult?.documents?.[0]?.fields?.policyStatus?.value || "unknown",
-      claimType: analyzeResult?.documents?.[0]?.fields?.claimType?.value || null,
-      claimAmount: analyzeResult?.documents?.[0]?.fields?.claimAmount?.value || null,
-      currency: analyzeResult?.documents?.[0]?.fields?.currency?.value || "USD",
-      incidentDate: analyzeResult?.documents?.[0]?.fields?.incidentDate?.value || null,
-      filingDate: analyzeResult?.documents?.[0]?.fields?.filingDate?.value || null,
-      incidentDescription: analyzeResult?.documents?.[0]?.fields?.incidentDescription?.value || null,
-      claimantAddress: analyzeResult?.documents?.[0]?.fields?.claimantAddress?.value || null,
-      contactNumber: analyzeResult?.documents?.[0]?.fields?.contactNumber?.value || null,
-      supportingDocuments: analyzeResult?.documents?.[0]?.fields?.supportingDocuments?.value || [],
-      providerName: analyzeResult?.documents?.[0]?.fields?.providerName?.value || null,
-      completeness: calculateCompleteness(analyzeResult?.documents?.[0]),
-      fraudScore: 0,
-      isDuplicate: false,
-      extractionNotes: `Azure Document Intelligence extraction. Confidence: ${(analyzeResult?.documents?.[0]?.confidence || 0) * 100}%`,
-      missingFields: identifyMissingFields(analyzeResult?.documents?.[0]?.fields)
-    };
+Return ONLY a valid JSON object with these exact fields:
+{
+  "claimNumber": "string or null (Look for 'Claim #', 'Invoice #', 'Reference #', or 'Control #')",
+  "claimantName": "string or null",
+  "claimantId": "string or null",
+  "policyNumber": "string or null",
+  "policyStatus": "active | inactive | suspended | unknown",
+  "claimType": "string (e.g. Medical, Auto, Property, Life, Liability)",
+  "claimAmount": number or null,
+  "currency": "string default USD",
+  "incidentDate": "YYYY-MM-DD or null",
+  "filingDate": "YYYY-MM-DD or null (Use today's date if missing and document is recent)",
+  "incidentDescription": "string or null",
+  "claimantAddress": "string or null",
+  "contactNumber": "string or null",
+  "supportingDocuments": ["array of document names mentioned"],
+  "providerName": "string or null",
+  "completeness": number (0-100, your assessment of how complete the form is based on required insurance fields),
+  "fraudScore": number (0-100, your assessment of fraud risk),
+  "isDuplicate": false,
+  "extractionNotes": "any important observations about the data or layout",
+  "missingFields": ["list of important missing fields"]
+}
 
-    console.log("✅ [Azure Doc Intelligence] Extraction successful. Extracted fields:", extracted);
-    console.table(extracted);
-    return extracted;
+Be thorough. OCR can confuse 8/9, 0/O, 1/l; use context to resolve them. If a field isn't found, use null. Analyze the text carefully to extract context-aware information.`;
+
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  if (!apiKey) throw new Error("VITE_OPENAI_API_KEY environment variable is not set");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Extract claims data from this document text (Filename: ${fileName}):\n\n${text}` }
+      ],
+      response_format: { type: "json_object" }
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`OpenAI API Error: ${errorData.error?.message || response.statusText}`);
   }
-  
-  // Handle text extraction (prebuilt-read model)
-  if (analyzeResult?.content) {
-    console.log("🔵 [Azure Doc Intelligence] Detected text extraction format (prebuilt-read)");
-    console.log("🔵 [Azure Doc Intelligence] Content length:", analyzeResult.content.length);
-    console.log("🔵 [Azure Doc Intelligence] Pages count:", analyzeResult.pages?.length || 0);
-    
-    const content = analyzeResult.content;
-    const extracted = parseClaimFormText(content);
-    
-    extracted.completeness = calculateClaimCompleteness(extracted);
-    extracted.fraudScore = 0;
-    extracted.isDuplicate = false;
-    extracted.extractionNotes = "Azure Document Intelligence (prebuilt-read) extraction";
-    extracted.missingFields = identifyMissingFieldsFromExtracted(extracted);
-    
-    console.log("✅ [Azure Doc Intelligence] Text extraction successful. Extracted fields:", extracted);
-    console.table(extracted);
-    return extracted;
-  }
 
-  console.warn("🔵 [Azure Doc Intelligence] Unexpected response format. Keys:", Object.keys(analyzeResult || {}));
-  return null;
+  const data = await response.json();
+  const result = JSON.parse(data.choices[0].message.content);
+
+  console.log("✅ [Intelligent Extraction] Successful. Extracted fields:", result);
+  return result;
 }
 
-function parseClaimFormText(content) {
-  console.log("📋 [Parse Claim Form] Starting text parsing");
-  
-  // Helper: Extract value that comes after a label (may be on next line)
-  const extractValue = (pattern, defaultVal = null) => {
-    const regex = new RegExp(pattern, 'is');
-    const match = content.match(regex);
-    if (match) {
-      const result = match[1]?.trim();
-      console.log(`   ✓ Found ${pattern.substring(0, 25)}... = "${result}"`);
-      return result || defaultVal;
-    }
-    return defaultVal;
-  };
-
-  const extracted = {
-    claimNumber: extractValue(`CLAIM[\\s\\n]*NUMBER[\\s\\n]+([A-Z0-9\\-]+)`),
-    claimantName: extractValue(`FULL[\\s\\n]*NAME[\\s\\n]+([A-Z][^\\n]+)`) || extractValue(`PATIENT[\\s\\n]*NAME[\\s\\n]+([A-Z][^\\n]+)`),
-    claimantId: extractValue(`PATIENT[\\s\\n]*ID[\\s\\n]+([A-Z0-9\\-]+)`),
-    policyNumber: extractValue(`POLICY[\\s\\n]*NUMBER[\\s\\n]+([A-Z0-9\\-]+)`),
-    policyStatus: extractValue(`POLICY[\\s\\n]*STATUS[\\s\\n]+([A-Z]+)`, "unknown"),
-    claimType: extractValue(`CLAIM[\\s\\n]*TYPE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
-    claimAmount: (() => {
-      const val = extractValue(`TOTAL[\\s\\n]*BILLED[\\s\\n]*AMOUNT[\\s\\n]*\\$?([0-9,]+(?:\\.\\d{2})?)`);
-      return val ? parseFloat(val.replace(/,/g, '')) : null;
-    })(),
-    currency: "USD",
-    incidentDate: extractValue(`DATE[\\s\\n]*OF[\\s\\n]*SERVICE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
-    filingDate: extractValue(`FILING[\\s\\n]*DATE[\\s\\n]+([^\\n]+?)(?:\\n|$)`),
-    incidentDescription: extractValue(`CLINICAL[\\s\\n]*SUMMARY[\\s\\n]+([^\\n]{30,}?(?:\\n[^\\n]+){0,3})`),
-    claimantAddress: extractValue(`ADDRESS[\\s\\n]+([^\\n]+(?:\\n[^\\n]+)?)`),
-    contactNumber: extractValue(`PHONE[\\s\\n]+([0-9()\\s\\-]+)`),
-    supportingDocuments: [],
-    providerName: extractValue(`FACILITY[\\s\\n]*NAME[\\s\\n]+([^\\n]+?)(?:\\s{2,}|$)`),
-  };
-
-  console.log("📋 [Parse Claim Form] Parsing complete");
-  return extracted;
-}
-
-function calculateClaimCompleteness(extracted) {
-  const expectedFields = [
-    'claimNumber', 'claimantName', 'claimantId', 'policyNumber',
-    'claimAmount', 'incidentDate', 'claimType'
-  ];
-  const filled = expectedFields.filter(f => extracted[f] !== null && extracted[f] !== undefined).length;
-  const percentage = Math.round((filled / expectedFields.length) * 100);
-  console.log(`📊 [Completeness] Calculated: ${filled}/${expectedFields.length} = ${percentage}%`);
-  return percentage;
-}
-
-function identifyMissingFieldsFromExtracted(extracted) {
-  const requiredFields = ['claimNumber', 'claimantName', 'policyNumber', 'claimAmount', 'incidentDate'];
-  const missing = requiredFields.filter(field => !extracted[field]);
-  console.log(`📋 [Missing Fields] Identified: ${missing.join(", ") || "None"}`);
-  return missing;
-}
+// DEPRECATED: Traditional parsing functions removed in favor of Intelligent LLM Extraction
 
 // ─── OpenAI API Call ──────────────────────────────────────────────────────────
 async function extractClaimsData(fileData, fileType, fileName) {
   console.log("📄 [Extract Claims Data] Processing file:", fileName, "Type:", fileType);
-  
+
   // Try Azure Document Intelligence first
   console.log("🔄 [Extract Claims Data] Attempting Azure Document Intelligence extraction...");
   const azureResult = await extractWithAzureDocIntelligence(fileData, fileType, fileName);
-  
+
   if (azureResult) {
     console.log("✅ [Extract Claims Data] Using Azure Document Intelligence results");
     // Use Azure results but enhance with fraud score from OpenAI if needed
     return azureResult;
   }
-  
+
   // Fallback to OpenAI
   console.log("⚠️  [Extract Claims Data] Azure failed or not configured. Falling back to OpenAI...");
   return await extractClaimsDataOpenAI(fileData, fileType, fileName);
@@ -411,7 +339,7 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
   } else {
     // For PDF and text documents, send as text
     console.log("🟢 [OpenAI Extraction] Processing as text/PDF");
-    const textContent = isPdf 
+    const textContent = isPdf
       ? `This is a PDF document (filename: ${fileName}). Extract all claims information from this PDF document content.\n\nContent: ${fileData.substring(0, 3000)}`
       : `Extract claims information from this document content (filename: ${fileName}).\n\nContent: ${fileData.substring(0, 3000)}`;
     messageContent = [{ type: "text", text: textContent }];
@@ -420,7 +348,7 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
   console.log("🟢 [OpenAI Extraction] Sending request to OpenAI...");
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { 
+    headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
@@ -443,7 +371,7 @@ Be thorough. If a field isn't found, use null. Assess completeness honestly. Fla
   }
 
   const data = await response.json();
-  
+
   if (!data.choices || !data.choices[0]) {
     console.error("❌ [OpenAI Extraction] Unexpected API response:", data);
     throw new Error("Invalid API response - no choices returned");
@@ -478,10 +406,10 @@ function fileToBase64(file) {
 }
 
 function fmt(val) {
-  if (val === null || val === undefined) return <span style={{color:"#6b7280",fontStyle:"italic"}}>Not found</span>;
+  if (val === null || val === undefined) return <span style={{ color: "#6b7280", fontStyle: "italic" }}>Not found</span>;
   if (typeof val === "boolean") return val ? "Yes" : "No";
   if (typeof val === "number" && val > 100) return `$${val.toLocaleString()}`;
-  if (Array.isArray(val)) return val.length ? val.join(", ") : <span style={{color:"#6b7280",fontStyle:"italic"}}>None</span>;
+  if (Array.isArray(val)) return val.length ? val.join(", ") : <span style={{ color: "#6b7280", fontStyle: "italic" }}>None</span>;
   return String(val);
 }
 
@@ -555,11 +483,11 @@ export default function ClaimsProcessor() {
       console.log("📥 [Process] Converting file to base64...");
       const b64 = await fileToBase64(f);
       console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
-      
+
       console.log("📥 [Process] Starting data extraction...");
       const data = await extractClaimsData(b64, f.type, f.name);
       console.log("📥 [Process] Extraction complete. Evaluating rules...");
-      
+
       const ev = evaluateRules(data);
       console.log("📥 [Process] Rules evaluation complete. Routing:", ev.routing, "Confidence:", ev.confidence + "%");
 
@@ -854,8 +782,8 @@ export default function ClaimsProcessor() {
                       </div>
                       <div style={{ fontSize: 12, color: colors.muted, marginTop: 6 }}>
                         {(extracted.fraudScore || 0) <= 30 ? "Low risk — proceed normally" :
-                         (extracted.fraudScore || 0) <= 60 ? "Moderate risk — manual review recommended" :
-                         "High risk — escalate to fraud investigation unit"}
+                          (extracted.fraudScore || 0) <= 60 ? "Moderate risk — manual review recommended" :
+                            "High risk — escalate to fraud investigation unit"}
                       </div>
                     </div>
                     <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>

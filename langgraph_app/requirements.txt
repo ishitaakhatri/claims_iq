@@ -1,0 +1,8 @@
+langgraph
+langchain-openai
+fastapi
+uvicorn
+azure-ai-formrecognizer
+python-dotenv
+pydantic
+python-multipart

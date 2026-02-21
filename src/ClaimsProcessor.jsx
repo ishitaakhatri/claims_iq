@@ -10,388 +10,34 @@ const BUSINESS_RULES = [
   { id: "BR006", name: "Duplicate Claim Check", description: "No duplicate claim reference found", field: "isDuplicate", operator: "eq", value: false, weight: 45 },
 ];
 
-function evaluateRules(extracted) {
-  const results = [];
-  let stp = true;
-  const escalationReasons = [];
-
-  for (const rule of BUSINESS_RULES) {
-    const rawVal = extracted[rule.field];
-    let passed = false;
-    let actual = rawVal;
-
-    if (rawVal === undefined || rawVal === null) {
-      passed = false;
-      actual = "N/A";
-    } else {
-      switch (rule.operator) {
-        case "lte": passed = Number(rawVal) <= rule.value; break;
-        case "lt": passed = Number(rawVal) < rule.value; break;
-        case "gte": passed = Number(rawVal) >= rule.value; break;
-        case "gt": passed = Number(rawVal) > rule.value; break;
-        case "eq": passed = rawVal === rule.value || String(rawVal).toLowerCase() === String(rule.value).toLowerCase(); break;
-        default: passed = false;
-      }
-    }
-
-    if (!passed) {
-      stp = false;
-      escalationReasons.push(rule.name);
-    }
-
-    results.push({ ...rule, passed, actual });
-  }
-
-  const passCount = results.filter(r => r.passed).length;
-  const confidence = Math.round((passCount / results.length) * 100);
-  const routing = stp ? "STP" : "ESCALATE";
-  const escalateTo = escalationReasons.includes("High-Value Escalation") || escalationReasons.includes("Fraud Indicators")
-    ? "Senior Claims Manager"
-    : escalationReasons.includes("Duplicate Claim Check")
-      ? "Fraud Investigation Unit"
-      : escalationReasons.includes("Document Completeness") || escalationReasons.includes("Policy Active Status")
-        ? "Claims Specialist"
-        : "Claims Reviewer";
-
-  return { results, routing, confidence, escalationReasons, escalateTo };
-}
-
-// ─── Azure Document Intelligence API Call ────────────────────────────────────
-async function extractWithAzureDocIntelligence(fileData, fileType, fileName) {
-  console.log("🔵 [Azure Doc Intelligence] Starting extraction for:", fileName);
-
-  const endpoint = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_ENDPOINT;
-  const apiKey = import.meta.env.VITE_AZURE_DOC_INTELLIGENCE_KEY;
-
-  if (!endpoint || !apiKey) {
-    console.warn("⚠️  [Azure Doc Intelligence] Credentials not configured, falling back to OpenAI");
-    return null;
-  }
+// ─── LangGraph Backend API Call ──────────────────────────────────────────────
+async function processClaimWithLangGraph(fileData, fileType, fileName) {
+  console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
   try {
-    console.log("🔵 [Azure Doc Intelligence] Endpoint:", endpoint);
-    console.log("🔵 [Azure Doc Intelligence] File type:", fileType);
-
-    // Determine model based on document type
-    let modelId = "prebuilt-layout"; // Use layout model for better text/structure extraction
-
-    console.log("🔵 [Azure Doc Intelligence] Using model:", modelId);
-
-    // Create FormData
-    const formData = new FormData();
-
-    // Convert base64 back to Blob
-    if (fileType.startsWith("image/") || fileType === "application/pdf") {
-      const binaryString = atob(fileData);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: fileType });
-      formData.append("file", blob, fileName);
-    } else {
-      formData.append("file", fileData);
-    }
-
-    const url = `${endpoint}documentintelligence/documentModels/${modelId}:analyze?api-version=2024-02-29-preview`;
-    const urlToTry = url;
-    const fallbackUrl = `${endpoint}documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-02-29-preview`;
-
-    console.log("🔵 [Azure Doc Intelligence] Request URL:", urlToTry);
-    console.log("🔵 [Azure Doc Intelligence] FormData keys:", Array.from(formData.keys()));
-    console.log("🔵 [Azure Doc Intelligence] Sending request...");
-
-    let response = await fetch(urlToTry, {
+    const response = await fetch("http://localhost:8000/process-claim", {
       method: "POST",
       headers: {
-        "Ocp-Apim-Subscription-Key": apiKey,
+        "Content-Type": "application/json",
       },
-      body: formData
-    });
-
-    console.log("🔵 [Azure Doc Intelligence] Response status:", response.status);
-    console.log("🔵 [Azure Doc Intelligence] Response headers:", {
-      contentType: response.headers.get("content-type"),
-      location: response.headers.get("location"),
-      operationLocation: response.headers.get("operation-location")
+      body: JSON.stringify({
+        file_data: fileData,
+        file_type: fileType,
+        file_name: fileName,
+      }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ [Azure Doc Intelligence] HTTP Error:", response.status, errorText);
-      return null;
+      const errorData = await response.json();
+      throw new Error(errorData.detail || "Backend processing failed");
     }
 
-    // Azure returns 202 with operation-location for async processing
-    if (response.status === 202) {
-      const operationLocation = response.headers.get("operation-location");
-      console.log("🔵 [Azure Doc Intelligence] Async processing - Operation Location:", operationLocation);
-
-      if (!operationLocation) {
-        console.error("❌ [Azure Doc Intelligence] No operation-location header in 202 response");
-        return null;
-      }
-
-      // Poll for results
-      let result = null;
-      let attempts = 0;
-      const maxAttempts = 30; // 30 seconds total
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-        attempts++;
-
-        console.log(`🔵 [Azure Doc Intelligence] Polling attempt ${attempts}/${maxAttempts}...`);
-
-        const statusResponse = await fetch(operationLocation, {
-          method: "GET",
-          headers: {
-            "Ocp-Apim-Subscription-Key": apiKey,
-          }
-        });
-
-        console.log(`🔵 [Azure Doc Intelligence] Poll response status:`, statusResponse.status);
-
-        if (!statusResponse.ok) {
-          const errorText = await statusResponse.text();
-          console.error("❌ [Azure Doc Intelligence] Poll error:", errorText);
-          continue;
-        }
-
-        const pollResult = await statusResponse.json();
-        console.log(`🔵 [Azure Doc Intelligence] Poll response keys:`, Object.keys(pollResult));
-        console.log(`🔵 [Azure Doc Intelligence] Poll response:`, pollResult);
-
-        if (pollResult.status === "succeeded") {
-          console.log("✅ [Azure Doc Intelligence] Processing succeeded!");
-          result = pollResult;
-          break;
-        } else if (pollResult.status === "failed") {
-          console.error("❌ [Azure Doc Intelligence] Processing failed:", pollResult.error);
-          return null;
-        }
-
-        console.log(`🔵 [Azure Doc Intelligence] Status: ${pollResult.status}, continuing...`);
-      }
-
-      if (!result) {
-        console.error("❌ [Azure Doc Intelligence] Timeout waiting for results");
-        return null;
-      }
-
-      const analyzeResult = result.analyzeResult || result;
-      console.log("🔵 [Azure Doc Intelligence] Received async result");
-
-      // Pass the raw content to OpenAI/LLM for intelligent field extraction
-      if (analyzeResult?.content) {
-        console.log("🔵 [Azure Doc Intelligence] Sending content to OpenAI for intelligent extraction...");
-        return await extractClaimsDataFromText(analyzeResult.content, fileName);
-      }
-
-      return null;
-    } else {
-      // Synchronous response (200 status)
-      const responseData = await response.json();
-      console.log("🔵 [Azure Doc Intelligence] Sync response received");
-      const analyzeResult = responseData.analyzeResult || responseData;
-
-      if (analyzeResult?.content) {
-        return await extractClaimsDataFromText(analyzeResult.content, fileName);
-      }
-      return null;
-    }
-  } catch (error) {
-    console.error("❌ [Azure Doc Intelligence] Exception:", error.message);
-    return null;
-  }
-}
-
-/**
- * Intelligent field extraction using LLM on OCR text/layout
- */
-async function extractClaimsDataFromText(text, fileName) {
-  const systemPrompt = `You are an expert claims processing AI. Extract structured data from the provided text content of a claims document.
-The text was generated via OCR, so there might be minor errors or layout shifts. Use your reasoning to identify the correct fields.
-
-Return ONLY a valid JSON object with these exact fields:
-{
-  "claimNumber": "string or null (Look for 'Claim #', 'Invoice #', 'Reference #', or 'Control #')",
-  "claimantName": "string or null",
-  "claimantId": "string or null",
-  "policyNumber": "string or null",
-  "policyStatus": "active | inactive | suspended | unknown",
-  "claimType": "string (e.g. Medical, Auto, Property, Life, Liability)",
-  "claimAmount": number or null,
-  "currency": "string default USD",
-  "incidentDate": "YYYY-MM-DD or null",
-  "filingDate": "YYYY-MM-DD or null (Use today's date if missing and document is recent)",
-  "incidentDescription": "string or null",
-  "claimantAddress": "string or null",
-  "contactNumber": "string or null",
-  "supportingDocuments": ["array of document names mentioned"],
-  "providerName": "string or null",
-  "completeness": number (0-100, your assessment of how complete the form is based on required insurance fields),
-  "fraudScore": number (0-100, your assessment of fraud risk),
-  "isDuplicate": false,
-  "extractionNotes": "any important observations about the data or layout",
-  "missingFields": ["list of important missing fields"]
-}
-
-Be thorough. OCR can confuse 8/9, 0/O, 1/l; use context to resolve them. If a field isn't found, use null. Analyze the text carefully to extract context-aware information.`;
-
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  if (!apiKey) throw new Error("VITE_OPENAI_API_KEY environment variable is not set");
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Extract claims data from this document text (Filename: ${fileName}):\n\n${text}` }
-      ],
-      response_format: { type: "json_object" }
-    })
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`OpenAI API Error: ${errorData.error?.message || response.statusText}`);
-  }
-
-  const data = await response.json();
-  const result = JSON.parse(data.choices[0].message.content);
-
-  console.log("✅ [Intelligent Extraction] Successful. Extracted fields:", result);
-  return result;
-}
-
-// DEPRECATED: Traditional parsing functions removed in favor of Intelligent LLM Extraction
-
-// ─── OpenAI API Call ──────────────────────────────────────────────────────────
-async function extractClaimsData(fileData, fileType, fileName) {
-  console.log("📄 [Extract Claims Data] Processing file:", fileName, "Type:", fileType);
-
-  // Try Azure Document Intelligence first
-  console.log("🔄 [Extract Claims Data] Attempting Azure Document Intelligence extraction...");
-  const azureResult = await extractWithAzureDocIntelligence(fileData, fileType, fileName);
-
-  if (azureResult) {
-    console.log("✅ [Extract Claims Data] Using Azure Document Intelligence results");
-    // Use Azure results but enhance with fraud score from OpenAI if needed
-    return azureResult;
-  }
-
-  // Fallback to OpenAI
-  console.log("⚠️  [Extract Claims Data] Azure failed or not configured. Falling back to OpenAI...");
-  return await extractClaimsDataOpenAI(fileData, fileType, fileName);
-}
-
-async function extractClaimsDataOpenAI(fileData, fileType, fileName) {
-  console.log("🟢 [OpenAI Extraction] Starting with file:", fileName);
-  const isImage = fileType.startsWith("image/");
-  const isPdf = fileType === "application/pdf";
-
-  const systemPrompt = `You are an expert claims processing AI. Extract structured data from the provided claims document and return ONLY a valid JSON object with these exact fields:
-
-{
-  "claimNumber": "string or null",
-  "claimantName": "string or null",
-  "claimantId": "string or null",
-  "policyNumber": "string or null",
-  "policyStatus": "active | inactive | suspended | unknown",
-  "claimType": "string (e.g. Medical, Auto, Property, Life, Liability)",
-  "claimAmount": number or null,
-  "currency": "string default USD",
-  "incidentDate": "YYYY-MM-DD or null",
-  "filingDate": "YYYY-MM-DD or null",
-  "incidentDescription": "string or null",
-  "claimantAddress": "string or null",
-  "contactNumber": "string or null",
-  "supportingDocuments": ["array of document names mentioned"],
-  "providerName": "string or null",
-  "completeness": number (0-100, your assessment of how complete the form is),
-  "fraudScore": number (0-100, your assessment of fraud risk based on document content; 0=low risk),
-  "isDuplicate": false,
-  "extractionNotes": "any important observations",
-  "missingFields": ["list of important missing fields"]
-}
-
-Be thorough. If a field isn't found, use null. Assess completeness honestly. Flag any inconsistencies in extractionNotes.`;
-
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  if (!apiKey) throw new Error("VITE_OPENAI_API_KEY environment variable is not set");
-
-  let messageContent = [];
-
-  if (isImage) {
-    // For images, send as base64 data URL
-    console.log("🟢 [OpenAI Extraction] Processing as image");
-    messageContent.push({
-      type: "image_url",
-      image_url: { url: `data:${fileType};base64,${fileData}` }
-    });
-    messageContent.push({ type: "text", text: "Extract all claims information from this document image." });
-  } else {
-    // For PDF and text documents, send as text
-    console.log("🟢 [OpenAI Extraction] Processing as text/PDF");
-    const textContent = isPdf
-      ? `This is a PDF document (filename: ${fileName}). Extract all claims information from this PDF document content.\n\nContent: ${fileData.substring(0, 3000)}`
-      : `Extract claims information from this document content (filename: ${fileName}).\n\nContent: ${fileData.substring(0, 3000)}`;
-    messageContent = [{ type: "text", text: textContent }];
-  }
-
-  console.log("🟢 [OpenAI Extraction] Sending request to OpenAI...");
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "gpt-3.5-turbo",
-      max_tokens: 1000,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: messageContent }
-      ]
-    })
-  });
-
-  console.log("🟢 [OpenAI Extraction] Response status:", response.status);
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    console.error("❌ [OpenAI Extraction] Error:", errorData.error?.message);
-    throw new Error(`OpenAI API Error: ${errorData.error?.message || response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.choices || !data.choices[0]) {
-    console.error("❌ [OpenAI Extraction] Unexpected API response:", data);
-    throw new Error("Invalid API response - no choices returned");
-  }
-
-  const text = data.choices[0]?.message?.content || "{}";
-  console.log("🟢 [OpenAI Extraction] Received response, parsing...");
-  const clean = text.replace(/```json|```/g, "").trim();
-
-  try {
-    const parsed = JSON.parse(clean);
-    console.log("✅ [OpenAI Extraction] Successfully parsed JSON");
-    return parsed;
-  } catch (e) {
-    console.error("❌ [OpenAI Extraction] JSON Parse Error:", e.message);
-    console.error("❌ [OpenAI Extraction] Response text:", clean.substring(0, 200));
-    const match = clean.match(/\{[\s\S]*\}/);
-    const result = match ? JSON.parse(match[0]) : {};
-    console.log("✅ [OpenAI Extraction] Recovered from parse error");
+    const result = await response.json();
+    console.log("✅ [LangGraph Backend] Success:", result);
     return result;
+  } catch (error) {
+    console.error("❌ [LangGraph Backend] Error:", error.message);
+    throw error;
   }
 }
 
@@ -484,27 +130,26 @@ export default function ClaimsProcessor() {
       const b64 = await fileToBase64(f);
       console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
 
-      console.log("📥 [Process] Starting data extraction...");
-      const data = await extractClaimsData(b64, f.type, f.name);
-      console.log("📥 [Process] Extraction complete. Evaluating rules...");
+      console.log("📥 [Process] Starting LangGraph Backend execution...");
+      const result = await processClaimWithLangGraph(b64, f.type, f.name);
 
-      const ev = evaluateRules(data);
-      console.log("📥 [Process] Rules evaluation complete. Routing:", ev.routing, "Confidence:", ev.confidence + "%");
+      const { extracted_data, evaluation } = result;
+      console.log("✅ [Process] Backend complete. Routing:", evaluation.routing, "Confidence:", evaluation.confidence + "%");
 
-      setExtracted(data);
-      setEvaluation(ev);
+      setExtracted(extracted_data);
+      setEvaluation(evaluation);
       setStage("done");
       setActiveTab("extraction");
 
       setClaimsLog(prev => [{
         id: Date.now(),
         file: f.name,
-        claim: data.claimNumber || "N/A",
-        claimant: data.claimantName || "Unknown",
-        amount: data.claimAmount,
-        routing: ev.routing,
+        claim: extracted_data.claimNumber || "N/A",
+        claimant: extracted_data.claimantName || "Unknown",
+        amount: extracted_data.claimAmount,
+        routing: evaluation.routing,
         time: new Date().toLocaleTimeString(),
-        confidence: ev.confidence,
+        confidence: evaluation.confidence,
       }, ...prev.slice(0, 9)]);
     } catch (e) {
       console.error("❌ [Process] Error occurred:", e.message);

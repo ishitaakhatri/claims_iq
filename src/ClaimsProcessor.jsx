@@ -124,6 +124,8 @@ export default function ClaimsProcessor() {
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState("extraction");
   const [claimsLog, setClaimsLog] = useState([]);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [detailTab, setDetailTab] = useState("rules");
   const [ruleConfig, setRuleConfig] = useState(
     BUSINESS_RULES.reduce((acc, rule) => ({
       ...acc,
@@ -759,11 +761,30 @@ export default function ClaimsProcessor() {
                           </div>
                           <span style={{ fontFamily: "IBM Plex Mono", fontSize: 15, fontWeight: 700, minWidth: 50 }}>{extracted.fraudScore ?? 0}/100</span>
                         </div>
-                        <div style={{ fontSize: 13, color: colors.muted, lineHeight: 1.6 }}>
+                        <div style={{ fontSize: 13, color: colors.muted, lineHeight: 1.6, marginBottom: 14 }}>
                           {(extracted.fraudScore || 0) <= 30 ? "✓ Low risk — proceed normally" :
                             (extracted.fraudScore || 0) <= 60 ? "⚠ Moderate risk — manual review recommended" :
                               "🔴 High risk — escalate to fraud investigation unit"}
                         </div>
+                        {extracted.fraudReasons && extracted.fraudReasons.length > 0 && (
+                          <div style={{
+                            padding: "12px",
+                            background: "rgba(245, 158, 11, 0.08)",
+                            border: `1px solid rgba(245, 158, 11, 0.3)`,
+                            borderRadius: 8,
+                            fontSize: 12,
+                            color: "#fcd34d",
+                            lineHeight: 1.7
+                          }}>
+                            <div style={{ fontSize: 10, color: colors.accent, fontWeight: 700, marginBottom: 8, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em" }}>⚠️ CONTRIBUTING FACTORS:</div>
+                            {extracted.fraudReasons.map((reason, idx) => (
+                              <div key={idx} style={{ marginBottom: idx < extracted.fraudReasons.length - 1 ? 6 : 0, display: "flex", gap: 8 }}>
+                                <span style={{ minWidth: 20, color: colors.accent, fontWeight: 700 }}>•</span>
+                                <span>{reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div style={{
@@ -962,23 +983,28 @@ export default function ClaimsProcessor() {
                     {claimsLog.map(c => (
                       <div key={c.id} style={{
                         padding: "10px 12px",
-                        background: "rgba(17, 24, 39, 0.8)",
+                        background: selectedLog?.id === c.id ? `rgba(245, 158, 11, 0.15)` : "rgba(17, 24, 39, 0.8)",
                         backdropFilter: "blur(4px)",
                         borderRadius: 8,
-                        border: `1px solid ${c.routing === "STP" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                        border: `2px solid ${selectedLog?.id === c.id ? colors.accent : c.routing === "STP" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
                         fontSize: 11,
                         animation: "slideIn 0.3s ease",
                         transition: "all 0.2s ease",
                         cursor: "pointer",
-                        boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)"
+                        boxShadow: selectedLog?.id === c.id ? `0 0 16px ${colors.accent}44` : "0 2px 6px rgba(0, 0, 0, 0.2)"
                       }}
+                        onClick={() => setSelectedLog(c)}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "translateX(4px)";
-                          e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
+                          if (selectedLog?.id !== c.id) {
+                            e.currentTarget.style.transform = "translateX(4px)";
+                            e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
+                          }
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "translateX(0)";
-                          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
+                          if (selectedLog?.id !== c.id) {
+                            e.currentTarget.style.transform = "translateX(0)";
+                            e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
+                          }
                         }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                           <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
@@ -1000,6 +1026,456 @@ export default function ClaimsProcessor() {
         </div>
       </SignedIn>
 
+      {/* ── Claim History Detail Modal ── */}
+      {selectedLog && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          background: "rgba(0, 0, 0, 0.6)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20, animation: "fadeIn 0.2s ease"
+        }}
+          onClick={() => setSelectedLog(null)}>
+          <div style={{
+            background: colors.card, borderRadius: 16, maxWidth: 900, width: "100%",
+            maxHeight: "90vh", overflowY: "auto",
+            border: `1px solid ${colors.border}`,
+            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.5)",
+            animation: "slideIn 0.3s ease",
+            color: colors.text
+          }}
+            onClick={(e) => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{
+              padding: "20px 24px", borderBottom: `1px solid ${colors.border}`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              background: selectedLog.routing === "STP"
+                ? "rgba(16, 185, 129, 0.05)"
+                : "rgba(239, 68, 68, 0.05)",
+              position: "sticky", top: 0, zIndex: 10
+            }}>
+              <div>
+                <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>CLAIM HISTORY</div>
+                <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: colors.text }}>{selectedLog.claimant}</h2>
+                <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
+                  Claim #{selectedLog.claim} · {selectedLog.time}
+                </div>
+              </div>
+              <button onClick={() => setSelectedLog(null)} style={{
+                width: 40, height: 40, borderRadius: "50%",
+                background: colors.border, border: "none",
+                color: colors.text, fontSize: 18, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
+              }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.accent;
+                  e.currentTarget.style.color = colors.bg;
+                  e.currentTarget.style.transform = "scale(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = colors.border;
+                  e.currentTarget.style.color = colors.text;
+                  e.currentTarget.style.transform = "scale(1)";
+                }}>×</button>
+            </div>
+
+            {/* Top Info Banner */}
+            <div style={{
+              padding: "16px 24px", borderBottom: `1px solid ${colors.border}`,
+              display: "flex", justifyContent: "space-between", gap: 24,
+              background: "rgba(17, 24, 39, 0.4)"
+            }}>
+              <div>
+                <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", fontWeight: 700, marginBottom: 4 }}>ROUTING</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: selectedLog.routing === "STP" ? "#10b981" : "#ef4444" }}>
+                  {selectedLog.routing === "STP" ? "✓ STRAIGHT-THROUGH" : "⚠ ESCALATED"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", fontWeight: 700, marginBottom: 4 }}>CONFIDENCE</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: colors.accent }}>{selectedLog.confidence}%</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", fontWeight: 700, marginBottom: 4 }}>AMOUNT</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: colors.text }}>
+                  ${Number(selectedLog.amount).toLocaleString()}
+                </div>
+              </div>
+              {selectedLog.extracted?.fraudScore !== undefined && (
+                <div>
+                  <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", fontWeight: 700, marginBottom: 4 }}>FRAUD SCORE</div>
+                  <div style={{
+                    fontSize: 14, fontWeight: 700,
+                    color: selectedLog.extracted.fraudScore > 60 ? "#ef4444" : selectedLog.extracted.fraudScore > 30 ? "#f59e0b" : "#10b981"
+                  }}>
+                    {selectedLog.extracted.fraudScore}/100
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ borderBottom: `1px solid ${colors.border}`, display: "flex", background: "rgba(13, 17, 23, 0.5)", position: "sticky", top: 60, zIndex: 9 }}>
+              {[
+                { id: "rules", label: "Rules Evaluation", icon: "✓" },
+                { id: "extraction", label: "Extracted Data", icon: "📄" },
+                { id: "notes", label: "Details & Notes", icon: "💡" },
+              ].map(t => (
+                <button key={t.id} onClick={() => setDetailTab(t.id)} style={{
+                  flex: 1, padding: "12px 16px", border: "none", cursor: "pointer",
+                  fontSize: 13, fontWeight: 600, fontFamily: "'Barlow', sans-serif",
+                  background: "transparent", color: detailTab === t.id ? colors.accent : colors.muted,
+                  borderBottom: detailTab === t.id ? `3px solid ${colors.accent}` : "3px solid transparent",
+                  transition: "all 0.2s ease"
+                }}>
+                  <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: "24px" }}>
+              {/* Rules Tab */}
+              {detailTab === "rules" && selectedLog.evaluation && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{
+                      fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.accent,
+                      letterSpacing: "0.08em", marginBottom: 12, fontWeight: 700
+                    }}>RULES SUMMARY</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                      <div style={{
+                        padding: "12px 14px", background: "rgba(16, 185, 129, 0.1)",
+                        borderRadius: 8, border: "1px solid rgba(16, 185, 129, 0.3)"
+                      }}>
+                        <div style={{ fontSize: 11, color: "#10b981", fontWeight: 700, marginBottom: 4 }}>PASSED</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#10b981" }}>
+                          {selectedLog.evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: "12px 14px", background: "rgba(239, 68, 68, 0.1)",
+                        borderRadius: 8, border: "1px solid rgba(239, 68, 68, 0.3)"
+                      }}>
+                        <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginBottom: 4 }}>FAILED</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#ef4444" }}>
+                          {selectedLog.evaluation.results.filter(r => !r.passed && r.status !== "SKIPPED").length}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: "12px 14px", background: "rgba(107, 114, 128, 0.1)",
+                        borderRadius: 8, border: "1px solid rgba(107, 114, 128, 0.3)"
+                      }}>
+                        <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 700, marginBottom: 4 }}>SKIPPED</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#9ca3af" }}>
+                          {selectedLog.evaluation.results.filter(r => r.status === "SKIPPED").length}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.accent,
+                    letterSpacing: "0.08em", marginBottom: 12, fontWeight: 700
+                  }}>DETAILED RESULTS</div>
+
+                  {/* Passed Rules */}
+                  {selectedLog.evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{
+                        padding: "10px 14px", background: "rgba(16, 185, 129, 0.08)",
+                        borderRadius: 8, marginBottom: 10, fontSize: 12, fontWeight: 700, color: "#10b981",
+                        border: "1px solid rgba(16, 185, 129, 0.2)"
+                      }}>✓ PASSED RULES ({selectedLog.evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length})</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {selectedLog.evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").map(r => (
+                          <div key={r.id} style={{
+                            padding: "12px 14px", background: "rgba(16, 185, 129, 0.05)",
+                            borderRadius: 8, border: "1px solid rgba(16, 185, 129, 0.2)",
+                            transition: "all 0.2s ease"
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(16, 185, 129, 0.1)";
+                              e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.4)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "rgba(16, 185, 129, 0.05)";
+                              e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.2)";
+                            }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 4 }}>
+                                  ✓ {r.name}
+                                </div>
+                                <div style={{ fontSize: 11, color: colors.muted }}>{r.description}</div>
+                              </div>
+                              <span style={{
+                                padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                                background: "rgba(16, 185, 129, 0.2)", color: "#10b981"
+                              }}>PASS</span>
+                            </div>
+                            {r.actual !== undefined && (
+                              <div style={{ marginTop: 8, fontSize: 11, color: colors.muted }}>
+                                <span style={{ fontFamily: "IBM Plex Mono" }}>Value: {String(r.actual)}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Failed Rules */}
+                  {selectedLog.evaluation.results.filter(r => !r.passed && r.status !== "SKIPPED").length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{
+                        padding: "10px 14px", background: "rgba(239, 68, 68, 0.08)",
+                        borderRadius: 8, marginBottom: 10, fontSize: 12, fontWeight: 700, color: "#ef4444",
+                        border: "1px solid rgba(239, 68, 68, 0.2)"
+                      }}>✗ FAILED RULES ({selectedLog.evaluation.results.filter(r => !r.passed && r.status !== "SKIPPED").length})</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {selectedLog.evaluation.results.filter(r => !r.passed && r.status !== "SKIPPED").map(r => (
+                          <div key={r.id} style={{
+                            padding: "12px 14px", background: "rgba(239, 68, 68, 0.05)",
+                            borderRadius: 8, border: "1px solid rgba(239, 68, 68, 0.2)",
+                            transition: "all 0.2s ease"
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+                              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "rgba(239, 68, 68, 0.05)";
+                              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.2)";
+                            }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 4 }}>
+                                  ✗ {r.name}
+                                </div>
+                                <div style={{ fontSize: 11, color: colors.muted }}>{r.description}</div>
+                              </div>
+                              <span style={{
+                                padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                                background: "rgba(239, 68, 68, 0.2)", color: "#ef4444"
+                              }}>FAIL</span>
+                            </div>
+                            {r.actual !== undefined && (
+                              <div style={{ marginTop: 8, fontSize: 11, color: colors.muted }}>
+                                <span style={{ fontFamily: "IBM Plex Mono" }}>Value: {String(r.actual)}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skipped Rules */}
+                  {selectedLog.evaluation.results.filter(r => r.status === "SKIPPED").length > 0 && (
+                    <div>
+                      <div style={{
+                        padding: "10px 14px", background: "rgba(107, 114, 128, 0.08)",
+                        borderRadius: 8, marginBottom: 10, fontSize: 12, fontWeight: 700, color: "#9ca3af",
+                        border: "1px solid rgba(107, 114, 128, 0.2)"
+                      }}>○ SKIPPED RULES ({selectedLog.evaluation.results.filter(r => r.status === "SKIPPED").length})</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {selectedLog.evaluation.results.filter(r => r.status === "SKIPPED").map(r => (
+                          <div key={r.id} style={{
+                            padding: "12px 14px", background: "rgba(107, 114, 128, 0.05)",
+                            borderRadius: 8, border: "1px solid rgba(107, 114, 128, 0.2)", opacity: 0.6
+                          }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: colors.muted, marginBottom: 4 }}>
+                                ○ {r.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: colors.muted }}>Skipped by configuration</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Extraction Tab */}
+              {detailTab === "extraction" && selectedLog.extracted && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
+                    {[
+                      { label: "Claim Number", key: "claimNumber" },
+                      { label: "Policy Number", key: "policyNumber" },
+                      { label: "Claimant Name", key: "claimantName" },
+                      { label: "Claimant ID", key: "claimantId" },
+                      { label: "Claim Type", key: "claimType" },
+                      { label: "Claim Amount", key: "claimAmount" },
+                      { label: "Policy Status", key: "policyStatus" },
+                      { label: "Incident Date", key: "incidentDate" },
+                      { label: "Filing Date", key: "filingDate" },
+                      { label: "Provider", key: "providerName" },
+                      { label: "Contact", key: "contactNumber" },
+                      { label: "Completeness Score", key: "completeness" },
+                    ].map(({ label, key }) => (
+                      <div key={key} style={{
+                        padding: "12px 14px", background: "rgba(17, 24, 39, 0.8)",
+                        borderRadius: 8, border: `1px solid ${colors.border}`,
+                        transition: "all 0.2s ease"
+                      }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}>
+                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 4, fontWeight: 700 }}>
+                          {label.toUpperCase()}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: colors.text }}>
+                          {fmt(selectedLog.extracted[key])}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedLog.extracted.claimantAddress && (
+                    <div style={{
+                      marginTop: 14, padding: "14px 16px", background: "rgba(17, 24, 39, 0.8)",
+                      borderRadius: 8, border: `1px solid ${colors.border}`
+                    }}>
+                      <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 6, fontWeight: 700 }}>ADDRESS</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{selectedLog.extracted.claimantAddress}</div>
+                    </div>
+                  )}
+
+                  {selectedLog.extracted.incidentDescription && (
+                    <div style={{
+                      marginTop: 14, padding: "14px 16px", background: "rgba(17, 24, 39, 0.8)",
+                      borderRadius: 8, border: `1px solid ${colors.border}`
+                    }}>
+                      <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 6, fontWeight: 700 }}>INCIDENT DESCRIPTION</div>
+                      <div style={{ fontSize: 13, color: "#d1d5db", lineHeight: 1.6 }}>{selectedLog.extracted.incidentDescription}</div>
+                    </div>
+                  )}
+
+                  {selectedLog.extracted.missingFields?.length > 0 && (
+                    <div style={{
+                      marginTop: 14, padding: "14px 16px", background: "rgba(28, 17, 7, 0.9)",
+                      borderRadius: 8, border: `1px solid rgba(245, 158, 11, 0.4)`
+                    }}>
+                      <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", marginBottom: 6, fontWeight: 700 }}>⚠ MISSING FIELDS</div>
+                      <div style={{ fontSize: 12, color: "#fcd34d" }}>{selectedLog.extracted.missingFields.join(", ")}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Notes & Details Tab */}
+              {detailTab === "notes" && selectedLog.extracted && selectedLog.evaluation && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeIn 0.3s ease" }}>
+                  <div style={{
+                    padding: "14px 16px", background: "rgba(17, 24, 39, 0.8)",
+                    borderRadius: 8, border: `1px solid ${colors.border}`
+                  }}>
+                    <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>💡 EXTRACTION NOTES</div>
+                    <div style={{ fontSize: 13, color: "#d1d5db", lineHeight: 1.7 }}>
+                      {selectedLog.extracted.extractionNotes || "No notable observations."}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    padding: "14px 16px", background: "rgba(17, 24, 39, 0.8)",
+                    borderRadius: 8, border: `1px solid ${colors.border}`
+                  }}>
+                    <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>🛡️ FRAUD RISK</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                      <div style={{ flex: 1, height: 10, background: colors.dim, borderRadius: 6, overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", width: `${selectedLog.extracted.fraudScore || 0}%`,
+                          background: (selectedLog.extracted.fraudScore || 0) > 60 ? "linear-gradient(90deg, #ef4444, #f87171)" : (selectedLog.extracted.fraudScore || 0) > 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #10b981, #4ade80)",
+                          borderRadius: 6
+                        }} />
+                      </div>
+                      <span style={{ fontFamily: "IBM Plex Mono", fontSize: 14, fontWeight: 700, minWidth: 50 }}>
+                        {selectedLog.extracted.fraudScore ?? 0}/100
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.muted, lineHeight: 1.6, marginBottom: 10 }}>
+                      {(selectedLog.extracted.fraudScore || 0) <= 30 ? "✓ Low risk — Safe to proceed" :
+                        (selectedLog.extracted.fraudScore || 0) <= 60 ? "⚠ Moderate risk — Review recommended" :
+                          "🔴 High risk — Escalate immediately"}
+                    </div>
+                    {selectedLog.extracted.fraudReasons && selectedLog.extracted.fraudReasons.length > 0 && (
+                      <div style={{
+                        padding: "10px",
+                        background: "rgba(245, 158, 11, 0.08)",
+                        border: `1px solid rgba(245, 158, 11, 0.3)`,
+                        borderRadius: 6,
+                        fontSize: 11,
+                        color: "#fcd34d",
+                        lineHeight: 1.6
+                      }}>
+                        <div style={{ fontSize: 9, color: colors.accent, fontWeight: 700, marginBottom: 6, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em" }}>⚠️ CONTRIBUTING FACTORS:</div>
+                        {selectedLog.extracted.fraudReasons.map((reason, idx) => (
+                          <div key={idx} style={{ marginBottom: idx < selectedLog.extracted.fraudReasons.length - 1 ? 4 : 0, display: "flex", gap: 6 }}>
+                            <span style={{ minWidth: 16, color: colors.accent, fontWeight: 700 }}>•</span>
+                            <span>{reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedLog.evaluation.routing === "ESCALATE" && (
+                    <div style={{
+                      padding: "14px 16px", background: "rgba(239, 68, 68, 0.05)",
+                      borderRadius: 8, border: `1px solid rgba(239, 68, 68, 0.3)`
+                    }}>
+                      <div style={{ fontSize: 11, color: "#ef4444", fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8, fontWeight: 700 }}>📨 ESCALATION DETAILS</div>
+                      <div style={{ fontSize: 12, color: "#d1d5db", lineHeight: 1.6 }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>Escalated to:</strong> {selectedLog.evaluation.escalateTo}
+                        </div>
+                        <div>
+                          <strong>Reasons:</strong> {selectedLog.evaluation.escalationReasons?.join(", ") || "See failed rules above"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedLog.extracted.supportingDocuments && (
+                    <div style={{
+                      padding: "14px 16px", background: "rgba(17, 24, 39, 0.8)",
+                      borderRadius: 8, border: `1px solid ${colors.border}`
+                    }}>
+                      <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>📄 DOCUMENTS</div>
+                      <div style={{ fontSize: 13 }}>{fmt(selectedLog.extracted.supportingDocuments)}</div>
+                    </div>
+                  )}
+
+                  <div style={{
+                    padding: "14px 16px", background: "rgba(28, 17, 7, 0.9)",
+                    borderRadius: 8, border: `1px solid rgba(245, 158, 11, 0.4)`,
+                    boxShadow: "0 4px 12px rgba(245, 158, 11, 0.1)"
+                  }}>
+                    <div style={{ fontSize: 11, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>✨ RECOMMENDED ACTIONS</div>
+                    <div style={{ fontSize: 12, color: "#fcd34d", lineHeight: 1.8, whiteSpace: "pre-line" }}>
+                      {selectedLog.evaluation.routing === "STP"
+                        ? "✓ All rules passed. Ready for auto-processing.\n✓ Generate payment authorization.\n✓ Notify claimant of approval."
+                        : `• Route to: ${selectedLog.evaluation.escalateTo}\n• Reason(s): ${selectedLog.evaluation.escalationReasons?.join(", ")}\n• Priority: ${(selectedLog.extracted.fraudScore || 0) > 60 || selectedLog.amount > 25000 ? "HIGH" : "MEDIUM"}`
+                      }
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

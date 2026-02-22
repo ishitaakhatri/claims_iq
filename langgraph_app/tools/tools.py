@@ -31,7 +31,7 @@ def call_azure_layout(file_data_b64: str, file_type: str):
         
         # Calling Azure
         poller = document_analysis_client.begin_analyze_document(
-            "prebuilt-layout", file_bytes
+            "prebuilt-read", file_bytes
         )
         result = poller.result()
         
@@ -73,13 +73,20 @@ Return ONLY a valid JSON object with these exact fields:
   "supportingDocuments": ["array of document names mentioned"],
   "providerName": "string or null",
   "completeness": number (0-100, your assessment of how complete the form is based on required insurance fields),
-  "fraudScore": number (0-100, your assessment of fraud risk),
+  "fraudScore": number (0-100, your assessment of fraud risk. 0-30=low, 31-60=moderate, 61-100=high),
+  "fraudReasons": ["IMPORTANT: Always provide specific, actionable reasons if fraudScore > 20. Examples: 'Missing incident description', 'Claim amount inconsistent with incident type', 'Filing date much later than incident date', 'Policy status marked as inactive', 'Suspicious document formatting', 'Unexplained gaps in documentation', 'Claim amount exceeds typical range for this claim type', 'Inconsistent claimant information across document'. Even for moderate scores, provide at least 2-3 specific reasons."],
   "isDuplicate": false,
   "extractionNotes": "any important observations about the data or layout",
   "missingFields": ["list of important missing fields"]
 }
 
-Be thorough. OCR can confuse 8/9, 0/O, 1/l; use context to resolve them. If a field isn't found, use null. Analyze the text carefully to extract context-aware information."""
+CRITICAL INSTRUCTIONS FOR fraudScore AND fraudReasons:
+- If fraudScore is 0-20: fraudReasons can be empty array []
+- If fraudScore is 21-40: MUST provide 1-2 specific reasons in fraudReasons array
+- If fraudScore is 41-60: MUST provide 2-3 specific reasons in fraudReasons array
+- If fraudScore is 61+: MUST provide 3+ specific reasons in fraudReasons array
+- Reasons must be specific to THIS document, not generic
+- Each reason should be a clear, actionable statement"""
 
     try:
         response = client.chat.completions.create(

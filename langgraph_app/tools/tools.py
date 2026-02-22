@@ -31,7 +31,7 @@ def call_azure_layout(file_data_b64: str, file_type: str):
         
         # Calling Azure
         poller = document_analysis_client.begin_analyze_document(
-            "prebuilt-layout", file_bytes
+            "prebuilt-read", file_bytes
         )
         result = poller.result()
         

@@ -1,6 +1,7 @@
 import { SignedIn, SignedOut, SignIn, UserButton } from "@clerk/clerk-react"
 
 import { useState, useCallback, useRef } from "react";
+import logoImg from "./logo.png";
 
 // ─── Business Rules Engine ────────────────────────────────────────────────────
 const BUSINESS_RULES = [
@@ -290,18 +291,9 @@ export default function ClaimsProcessor() {
             height: 56, background: colors.surface, position: "sticky", top: 0, zIndex: 100
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", height: 32 }}>
-                <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  {/* Left Bars */}
-                  <rect x="5" y="25" width="35" height="12" rx="6" fill="#a78bfa" />
-                  <rect x="5" y="44" width="35" height="12" rx="6" fill="#7c3aed" />
-                  <rect x="5" y="63" width="35" height="12" rx="6" fill="#5b21b6" />
-                  {/* Stylized 'A' */}
-                  <path d="M55 75L72.5 25L90 75" stroke="#34d399" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
+              <img src={logoImg} alt="Extremum Analytics" style={{ height: 38 }} />
               <div>
-                <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>CLAIMSIQ</div>
+                <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em", color: "#f59e0b" }}>CLAIMSIQ</div>
                 <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC PROCESSING ENGINE</div>
               </div>
             </div>
@@ -619,24 +611,6 @@ export default function ClaimsProcessor() {
                 )}
               </div>
 
-              {/* Business Rules Reference */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {BUSINESS_RULES.map(r => (
-                    <div key={r.id} style={{
-                      padding: "8px 10px", background: colors.card, borderRadius: 6,
-                      border: `1px solid ${colors.border}`, fontSize: 11
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
-                      </div>
-                      <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
               {/* Processing Log */}
               <div>

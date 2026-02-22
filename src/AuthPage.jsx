@@ -28,18 +28,18 @@ const clerkAppearance = {
   elements: {
     card: {
       border: `1px solid ${colors.border}`,
-      background: "rgba(17, 24, 39, 0.8)",
+      background: "rgba(17, 24, 39, 0.95)",
       backdropFilter: "blur(12px)",
-      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 30px rgba(245, 158, 11, 0.1)",
     },
     headerTitle: { color: colors.text, fontWeight: 800, fontSize: "1.5rem" },
     headerSubtitle: { color: colors.muted },
     socialButtonsBlockButton: {
       backgroundColor: colors.surface,
-      border: `1px solid ${colors.border}`,
+      border: `2px solid ${colors.border}`,
       color: colors.text,
-      transition: "all 0.2s ease",
-      "&:hover": { backgroundColor: colors.dim, color: colors.text },
+      transition: "all 0.3s ease",
+      "&:hover": { backgroundColor: colors.dim, color: colors.text, borderColor: colors.accent },
     },
     formButtonPrimary: {
       backgroundColor: colors.accent,
@@ -47,19 +47,23 @@ const clerkAppearance = {
       fontWeight: 700,
       textTransform: "none",
       fontSize: "0.95rem",
-      "&:hover": { backgroundColor: "#fbbf24", color: colors.bg },
+      transition: "all 0.3s ease",
+      "&:hover": { backgroundColor: "#fbbf24", color: colors.bg, boxShadow: "0 8px 20px rgba(245, 158, 11, 0.3)" },
     },
     footerActionLink: {
       color: colors.accent,
       fontWeight: 600,
-      "&:hover": { color: colors.accent, textDecoration: "underline" }
+      transition: "all 0.2s ease",
+      "&:hover": { color: "#fbbf24", textDecoration: "underline" }
     },
     dividerLine: { background: colors.border },
     dividerText: { color: colors.muted, fontSize: "0.75rem" },
     formFieldLabel: { color: colors.text, fontWeight: 500 },
     formFieldInput: {
       border: `1px solid ${colors.border}`,
-      "&:focus": { border: `1px solid ${colors.accent}` }
+      backgroundColor: "rgba(3, 7, 18, 0.9)",
+      transition: "all 0.3s ease",
+      "&:focus": { border: `2px solid ${colors.accent}`, boxShadow: `0 0 20px ${colors.accent}33` }
     }
   }
 };
@@ -68,8 +72,20 @@ export default function AuthPage({ mode = "sign-in" }) {
   const css = `
     @keyframes float {
       0% { transform: translateY(0px) rotate(0deg); }
-      50% { transform: translateY(-20px) rotate(2deg); }
+      50% { transform: translateY(-24px) rotate(2deg); }
       100% { transform: translateY(0px) rotate(0deg); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+      50% { box-shadow: 0 0 40px rgba(245, 158, 11, 0.6); }
     }
     @keyframes bgGradient {
       0% { background-position: 0% 50%; }
@@ -105,6 +121,7 @@ export default function AuthPage({ mode = "sign-in" }) {
       top: 0; left: 0; right: 0; bottom: 0;
       background: radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 70%);
       pointer-events: none;
+      z-index: 1;
     }
     .form-side {
       display: flex;
@@ -113,23 +130,27 @@ export default function AuthPage({ mode = "sign-in" }) {
       padding: 40px;
       position: relative;
       z-index: 10;
+      background: rgba(3, 7, 18, 0.5);
     }
     .floating-shape {
       position: absolute;
       width: 300px;
       height: 300px;
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(124, 58, 237, 0.1));
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(124, 58, 237, 0.12));
       border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
-      filter: blur(40px);
-      animation: float 10s ease-in-out infinite;
+      filter: blur(50px);
+      animation: float 12s ease-in-out infinite;
       z-index: -1;
+      opacity: 0.8;
     }
     .logo-container {
-      margin-bottom: 40px;
+      margin-bottom: 48px;
       display: flex;
       align-items: center;
       gap: 16px;
       animation: slideIn 0.8s ease-out;
+      position: relative;
+      z-index: 2;
     }
     .brand-title {
       font-size: 3.5rem;
@@ -140,6 +161,9 @@ export default function AuthPage({ mode = "sign-in" }) {
       background: linear-gradient(to bottom right, #fff 30%, rgba(255,255,255,0.7));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      animation: slideIn 0.9s ease-out 0.1s backwards;
+      position: relative;
+      z-index: 2;
     }
     .brand-subtitle {
       font-size: 1.25rem;
@@ -147,37 +171,60 @@ export default function AuthPage({ mode = "sign-in" }) {
       max-width: 480px;
       line-height: 1.6;
       margin-bottom: 48px;
+      animation: slideIn 1s ease-out 0.2s backwards;
+      position: relative;
+      z-index: 2;
     }
     .feature-list {
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 28px;
+      position: relative;
+      z-index: 2;
     }
     .feature-item {
       display: flex;
       align-items: flex-start;
       gap: 16px;
+      animation: slideIn 1.1s ease-out 0.3s backwards;
+      opacity: 0;
+      animation-fill-mode: forwards;
+    }
+    .feature-item:nth-child(2) {
+      animation-delay: 0.4s;
+    }
+    .feature-item:nth-child(3) {
+      animation-delay: 0.5s;
     }
     .feature-icon {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.2);
-      border-radius: 10px;
+      border: 2px solid rgba(245, 158, 11, 0.3);
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: #f59e0b;
-      font-size: 1.2rem;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .feature-item:hover .feature-icon {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: rgba(245, 158, 11, 0.6);
+      transform: scale(1.1);
     }
     .feature-text div:first-child {
       font-weight: 700;
       color: #fff;
       margin-bottom: 4px;
+      font-size: 0.95rem;
     }
     .feature-text div:last-child {
       font-size: 0.9rem;
       color: #71717a;
+      line-height: 1.5;
     }
   `;
 

@@ -199,12 +199,17 @@ export default function ClaimsProcessor() {
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Barlow:wght@300;400;500;600;700;800&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #030712; }
-    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: #111827; }
-    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; transition: background 0.2s; }
+    ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes slideIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
     @keyframes scanline { from{top:-10%} to{top:110%} }
+    @keyframes shimmer { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    @keyframes glow { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0.4)} 50%{box-shadow:0 0 20px 10px rgba(245,158,11,0)} }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
   `;
 
   const colors = {
@@ -291,11 +296,15 @@ export default function ClaimsProcessor() {
           <div style={{
             borderBottom: `1px solid ${colors.border}`, padding: "0 24px",
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            height: 56, background: colors.surface, position: "sticky", top: 0, zIndex: 100
+            height: 64, background: "rgba(13, 17, 23, 0.95)", 
+            backdropFilter: "blur(8px)",
+            position: "sticky", top: 0, zIndex: 100,
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+            animation: "slideIn 0.4s ease"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", height: 32 }}>
-                <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", height: 40 }}>
+                <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                   {/* Left Bars */}
                   <rect x="5" y="25" width="35" height="12" rx="6" fill="#a78bfa" />
                   <rect x="5" y="44" width="35" height="12" rx="6" fill="#7c3aed" />
@@ -304,27 +313,45 @@ export default function ClaimsProcessor() {
                   <path d="M55 75L72.5 25L90 75" stroke="#34d399" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>CLAIMSIQ</div>
-                <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC PROCESSING ENGINE</div>
+              <div style={{ animation: "slideIn 0.5s ease 0.1s backwards", opacity: 0, animationFillMode: "forwards" }}>
+                <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: "0.02em", color: colors.text }}>CLAIMSIQ</div>
+                <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.05em" }}>AGENTIC ENGINE</div>
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ fontSize: 12, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+              <div style={{ fontSize: 13, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.02em" }}>
                 {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
               </div>
               <div style={{
-                padding: "4px 10px", background: "#052e16", border: "1px solid #166534",
-                borderRadius: 4, fontSize: 11, color: "#4ade80", fontFamily: "IBM Plex Mono", fontWeight: 700
-              }}>● LIVE</div>
+                padding: "6px 12px", 
+                background: "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 46, 22, 0.2))",
+                border: "1.5px solid rgba(16, 185, 129, 0.4)",
+                borderRadius: 8, 
+                fontSize: 11, 
+                color: "#10b981", 
+                fontFamily: "IBM Plex Mono", 
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "all 0.3s ease",
+                animation: "slideIn 0.5s ease 0.2s backwards",
+                opacity: 0,
+                animationFillMode: "forwards",
+                boxShadow: "0 0 12px rgba(16, 185, 129, 0.2)"
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", animation: "pulse 2s infinite" }}></span>
+                LIVE
+              </div>
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 0, maxWidth: 1440, margin: "0 auto", height: "calc(100vh - 56px)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 0, maxWidth: 1440, margin: "0 auto", height: "calc(100vh - 64px)" }}>
 
             {/* ── Main Panel ── */}
-            <div style={{ padding: 24, borderRight: `1px solid ${colors.border}` }}>
+            <div style={{ padding: 28, borderRight: `1px solid ${colors.border}`, overflowY: "auto" }}>
 
               {/* Upload Zone */}
               {stage === "idle" || stage === "error" ? (
@@ -335,28 +362,55 @@ export default function ClaimsProcessor() {
                   onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
                   onDrop={handleDrop}
                   style={{
-                    border: `2px dashed ${dragOver ? colors.accent : colors.dim}`,
-                    borderRadius: 16, padding: "120px 40px", textAlign: "center", cursor: "pointer",
-                    background: dragOver ? "rgba(245, 158, 11, 0.05)" : colors.card,
-                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", marginBottom: 24,
-                    minHeight: "500px", display: "flex", flexDirection: "column",
+                    border: `2px dashed ${dragOver ? colors.accent : colors.border}`,
+                    borderRadius: 20, padding: "140px 40px", textAlign: "center", cursor: "pointer",
+                    background: dragOver ? "rgba(245, 158, 11, 0.08)" : "rgba(17, 24, 39, 0.6)",
+                    backdropFilter: dragOver ? "blur(8px)" : "blur(4px)",
+                    transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)", marginBottom: 24,
+                    minHeight: "520px", display: "flex", flexDirection: "column",
                     alignItems: "center", justifyContent: "center",
-                    boxShadow: dragOver ? `0 0 40px ${colors.accent + "22"}` : "none",
-                    animation: "slideIn 0.4s ease-out"
+                    boxShadow: dragOver 
+                      ? `0 0 60px ${colors.accent}33, inset 0 0 40px ${colors.accent}11` 
+                      : "0 8px 32px rgba(0, 0, 0, 0.3)",
+                    animation: "slideIn 0.5s ease-out",
+                    transform: dragOver ? "scale(1.01)" : "scale(1)"
                   }}
                 >
-                  <div style={{ fontSize: 64, marginBottom: 20, filter: dragOver ? "drop-shadow(0 0 10px #f59e0b)" : "none", transition: "all 0.3s" }}>📄</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em" }}>Drop your claims document</div>
-                  <div style={{ fontSize: 14, color: colors.muted, marginBottom: 16 }}>
+                  <div style={{ 
+                    fontSize: 72, marginBottom: 24, 
+                    filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))", 
+                    transition: "all 0.3s ease",
+                    transform: dragOver ? "scale(1.15)" : "scale(1)"
+                  }}>📄</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em", color: colors.text }}>
+                    Drop your claims document
+                  </div>
+                  <div style={{ fontSize: 15, color: colors.muted, marginBottom: 20, maxWidth: 480, lineHeight: 1.5 }}>
                     Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
                   </div>
                   <div style={{
-                    display: "inline-block", padding: "10px 24px",
-                    background: colors.accent, color: "#000", borderRadius: 6,
-                    fontWeight: 700, fontSize: 14
-                  }}>Browse Files</div>
+                    display: "inline-block", padding: "12px 32px",
+                    background: `linear-gradient(135deg, ${colors.accent}, #f9a825)`,
+                    color: "#000", borderRadius: 10,
+                    fontWeight: 700, fontSize: 15, cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    boxShadow: "0 4px 16px rgba(245, 158, 11, 0.3)",
+                    border: "2px solid transparent",
+                    transform: dragOver ? "translateY(-2px)" : "translateY(0)"
+                  }}>
+                    Browse Files
+                  </div>
                   {stage === "error" && (
-                    <div style={{ marginTop: 16, padding: "10px 16px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, color: "#f87171", fontSize: 13 }}>
+                    <div style={{ 
+                      marginTop: 24, padding: "12px 16px", 
+                      background: "rgba(244, 63, 94, 0.1)", 
+                      border: "1px solid #f87171", 
+                      borderRadius: 10, 
+                      color: "#fca5a5", 
+                      fontSize: 13,
+                      backdropFilter: "blur(4px)",
+                      animation: "slideIn 0.3s ease"
+                    }}>
                       ⚠ Error: {error}
                     </div>
                   )}
@@ -364,31 +418,37 @@ export default function ClaimsProcessor() {
                 </div>
               ) : stage === "processing" ? (
                 <div style={{
-                  border: `1px solid ${colors.border}`, borderRadius: 12, padding: "48px 24px",
-                  textAlign: "center", background: colors.card, marginBottom: 24,
-                  animation: "slideIn 0.3s ease", position: "relative", overflow: "hidden"
+                  border: `1px solid ${colors.border}`, borderRadius: 16, padding: "60px 24px",
+                  textAlign: "center", background: "rgba(13, 17, 23, 0.8)",
+                  backdropFilter: "blur(8px)", marginBottom: 24,
+                  animation: "slideIn 0.3s ease", position: "relative", overflow: "hidden",
+                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)"
                 }}>
                   <div style={{
-                    position: "absolute", left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
+                    position: "absolute", left: 0, right: 0, height: 2, 
+                    background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
                     animation: "scanline 1.5s linear infinite", top: 0
                   }} />
                   <div style={{
-                    width: 48, height: 48, border: `3px solid ${colors.dim}`,
+                    width: 56, height: 56, border: `3px solid ${colors.dim}`,
                     borderTopColor: colors.accent, borderRadius: "50%",
-                    animation: "spin 0.8s linear infinite", margin: "0 auto 16px"
+                    animation: "spin 0.9s linear infinite", margin: "0 auto 20px",
+                    boxShadow: `0 0 20px ${colors.accent}44`
                   }} />
-                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Processing Document</div>
-                  <div style={{ fontSize: 13, color: colors.muted, fontFamily: "IBM Plex Mono" }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, color: colors.text }}>Processing Document</div>
+                  <div style={{ fontSize: 14, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 24 }}>
                     {file?.name}
                   </div>
-                  <div style={{ marginTop: 20, display: "flex", justifyContent: "center", gap: 24, fontSize: 12, color: colors.muted }}>
-                    {["Ingesting document", "Extracting fields", "Evaluating rules", "Routing decision"].map((s, i) => (
-                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                  <div style={{ marginTop: 24, display: "flex", justifyContent: "center", gap: 32, fontSize: 13, color: colors.muted }}>
+                    {["Ingesting", "Extracting", "Evaluating", "Routing"].map((s, i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                         <div style={{
-                          width: 8, height: 8, borderRadius: "50%",
-                          background: colors.accent, animation: `pulse 1.2s ${i * 0.3}s infinite`
+                          width: 10, height: 10, borderRadius: "50%",
+                          background: colors.accent, 
+                          animation: `pulse 1.4s ${i * 0.35}s infinite`,
+                          boxShadow: `0 0 12px ${colors.accent}66`
                         }} />
-                        {s}
+                        <span style={{ fontWeight: 500 }}>{s}</span>
                       </div>
                     ))}
                   </div>
@@ -401,51 +461,73 @@ export default function ClaimsProcessor() {
 
                   {/* Decision Banner */}
                   <div style={{
-                    borderRadius: 10, padding: "20px 24px", marginBottom: 20,
-                    background: evaluation.routing === "STP" ? "#052e16" : "#450a0a",
-                    border: `1px solid ${evaluation.routing === "STP" ? "#166534" : "#7f1d1d"}`,
-                    display: "flex", alignItems: "center", justifyContent: "space-between"
+                    borderRadius: 16, padding: "24px 28px", marginBottom: 24,
+                    background: evaluation.routing === "STP" 
+                      ? "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 46, 22, 0.3))"
+                      : "linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(69, 10, 10, 0.3))",
+                    border: `2px solid ${evaluation.routing === "STP" ? "#10b9814d" : "#ef4444cc"}`,
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    animation: "slideIn 0.5s ease",
+                    boxShadow: evaluation.routing === "STP" 
+                      ? "0 0 30px rgba(16, 185, 129, 0.2)"
+                      : "0 0 30px rgba(239, 68, 68, 0.15)",
+                    backdropFilter: "blur(8px)"
                   }}>
                     <div>
-                      <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 6 }}>ROUTING DECISION</div>
-                      <div style={{ fontSize: 24, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
-                        {evaluation.routing === "STP" ? "✓ Straight-Through Processing" : `⚠ Escalate to ${evaluation.escalateTo}`}
+                      <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.12em", marginBottom: 8, fontWeight: 700 }}>ROUTING DECISION</div>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: evaluation.routing === "STP" ? "#10b981" : "#ef4444", marginBottom: 4 }}>
+                        {evaluation.routing === "STP" ? "✓ Straight-Through" : `⚠ Escalate`}
                       </div>
                       {evaluation.routing === "ESCALATE" && (
-                        <div style={{ fontSize: 13, color: "#fca5a5", marginTop: 6 }}>
-                          Reasons: {evaluation.escalationReasons.join(" · ")}
+                        <div style={{ fontSize: 14, color: "#fca5a5", marginTop: 4, opacity: 0.9 }}>
+                          {evaluation.escalateTo}
                         </div>
                       )}
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.muted, marginBottom: 4 }}>RULES PASSED</div>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: evaluation.routing === "STP" ? "#4ade80" : "#f87171" }}>
+                      <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.muted, marginBottom: 4, fontWeight: 700 }}>CONFIDENCE</div>
+                      <div style={{ fontSize: 40, fontWeight: 800, color: evaluation.routing === "STP" ? "#10b981" : "#ef4444" }}>
                         {evaluation.confidence}%
                       </div>
                     </div>
                   </div>
 
                   {/* Tabs */}
-                  <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${colors.border}`, marginBottom: 20 }}>
+                  <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24 }}>
                     {[
                       { id: "extraction", label: "Extracted Data" },
                       { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed).length}/${evaluation.results.length})` },
                       { id: "notes", label: "AI Notes" },
                     ].map(t => (
                       <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-                        padding: "10px 18px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                        padding: "12px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600,
                         fontFamily: "'Barlow', sans-serif",
-                        background: activeTab === t.id ? colors.card : "transparent",
+                        background: "transparent",
                         color: activeTab === t.id ? colors.accent : colors.muted,
-                        borderBottom: activeTab === t.id ? `2px solid ${colors.accent}` : "2px solid transparent",
-                        borderRadius: "6px 6px 0 0", transition: "all 0.15s"
-                      }}>{t.label}</button>
+                        borderBottom: activeTab === t.id ? `3px solid ${colors.accent}` : "3px solid transparent",
+                        transition: "all 0.2s ease",
+                        position: "relative",
+                        opacity: activeTab === t.id ? 1 : 0.7
+                      }}>
+                        {t.label}
+                        {activeTab === t.id && (
+                          <div style={{
+                            position: "absolute",
+                            bottom: "-4px",
+                            left: "0",
+                            right: "0",
+                            height: "3px",
+                            background: colors.accent,
+                            animation: "slideIn 0.2s ease"
+                          }} />
+                        )}
+                      </button>
                     ))}
                   </div>
 
                   {/* Extraction Tab */}
                   {activeTab === "extraction" && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, animation: "fadeIn 0.3s ease" }}>
                       {[
                         { label: "Claim Number", key: "claimNumber" },
                         { label: "Policy Number", key: "policyNumber" },
@@ -461,28 +543,93 @@ export default function ClaimsProcessor() {
                         { label: "Completeness Score", key: "completeness" },
                       ].map(({ label, key }) => (
                         <div key={key} style={{
-                          padding: "12px 14px", background: colors.card,
-                          borderRadius: 8, border: `1px solid ${colors.border}`
+                          padding: "14px 16px", 
+                          background: "rgba(17, 24, 39, 0.8)",
+                          backdropFilter: "blur(8px)",
+                          borderRadius: 12, 
+                          border: `1px solid ${colors.border}`,
+                          transition: "all 0.3s ease",
+                          cursor: "default",
+                          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                          animation: "slideIn 0.4s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.background = "rgba(17, 24, 39, 0.95)";
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.background = "rgba(17, 24, 39, 0.8)";
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          e.currentTarget.style.transform = "translateY(0)";
                         }}>
-                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>{label.toUpperCase()}</div>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>{fmt(extracted[key])}</div>
+                          <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>{label.toUpperCase()}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>{fmt(extracted[key])}</div>
                         </div>
                       ))}
                       {extracted.claimantAddress && (
-                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>ADDRESS</div>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>{extracted.claimantAddress}</div>
+                        <div style={{ 
+                          gridColumn: "1 / -1", padding: "14px 16px", 
+                          background: "rgba(17, 24, 39, 0.8)",
+                          backdropFilter: "blur(8px)",
+                          borderRadius: 12, 
+                          border: `1px solid ${colors.border}`,
+                          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                          animation: "slideIn 0.4s ease",
+                          transition: "all 0.3s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                        }}>
+                          <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>ADDRESS</div>
+                          <div style={{ fontSize: 15, fontWeight: 600 }}>{extracted.claimantAddress}</div>
                         </div>
                       )}
                       {extracted.incidentDescription && (
-                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                          <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>INCIDENT DESCRIPTION</div>
+                        <div style={{ 
+                          gridColumn: "1 / -1", padding: "14px 16px", 
+                          background: "rgba(17, 24, 39, 0.8)",
+                          backdropFilter: "blur(8px)",
+                          borderRadius: 12, 
+                          border: `1px solid ${colors.border}`,
+                          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                          animation: "slideIn 0.4s ease",
+                          transition: "all 0.3s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                        }}>
+                          <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>INCIDENT DESCRIPTION</div>
                           <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6 }}>{extracted.incidentDescription}</div>
                         </div>
                       )}
                       {extracted.missingFields?.length > 0 && (
-                        <div style={{ gridColumn: "1 / -1", padding: "12px 14px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
-                          <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 5 }}>MISSING FIELDS</div>
+                        <div style={{ 
+                          gridColumn: "1 / -1", padding: "14px 16px", 
+                          background: "rgba(28, 17, 7, 0.9)",
+                          backdropFilter: "blur(8px)",
+                          borderRadius: 12, 
+                          border: `1px solid rgba(245, 158, 11, 0.4)`,
+                          boxShadow: "0 4px 16px rgba(245, 158, 11, 0.1)",
+                          animation: "slideIn 0.4s ease"
+                        }}>
+                          <div style={{ fontSize: 11, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>⚠ MISSING FIELDS</div>
                           <div style={{ fontSize: 13, color: "#fcd34d" }}>{extracted.missingFields.join(", ")}</div>
                         </div>
                       )}
@@ -491,83 +638,250 @@ export default function ClaimsProcessor() {
 
                   {/* Rules Tab */}
                   {activeTab === "rules" && (
-                    <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ 
+                      border: `1px solid ${colors.border}`, 
+                      borderRadius: 12, 
+                      overflow: "hidden",
+                      boxShadow: "0 8px 24px rgba(0, 0, 0, 0.3)",
+                      animation: "fadeIn 0.3s ease"
+                    }}>
                       <div style={{
                         display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
-                        gap: 12, padding: "8px 14px",
-                        background: "#0d1117", fontSize: 10, color: colors.muted,
+                        gap: 12, padding: "12px 14px",
+                        background: "rgba(13, 17, 23, 0.9)", fontSize: 10, color: colors.muted,
                         fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", borderBottom: `1px solid ${colors.border}`
                       }}>
                         <span></span><span>RULE ID</span><span>DESCRIPTION</span><span>ACTUAL</span><span>RESULT</span>
                       </div>
-                      {evaluation.results.map(r => <RuleRow key={r.id} rule={r} />)}
+                      {evaluation.results.map((r, idx) => (
+                        <div key={r.id} 
+                          style={{
+                            display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
+                            gap: 12, padding: "12px 14px", 
+                            borderBottom: idx !== evaluation.results.length - 1 ? `1px solid ${colors.border}` : "none",
+                            alignItems: "center", fontSize: 13,
+                            opacity: r.status === "SKIPPED" ? 0.5 : 1,
+                            background: idx % 2 === 0 ? "transparent" : "rgba(17, 24, 39, 0.3)",
+                            transition: "all 0.2s ease"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (r.status !== "SKIPPED") {
+                              e.currentTarget.style.background = "rgba(245, 158, 11, 0.05)";
+                              e.currentTarget.style.borderLeft = `3px solid ${colors.accent}`;
+                              e.currentTarget.style.paddingLeft = "11px";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "rgba(17, 24, 39, 0.3)";
+                            e.currentTarget.style.borderLeft = "none";
+                            e.currentTarget.style.paddingLeft = "14px";
+                          }}>
+                          <span style={{ fontSize: 16 }}>{r.status === "SKIPPED" ? "○" : r.passed ? "✓" : "✗"}</span>
+                          <span style={{
+                            fontFamily: "'Courier New', monospace", fontSize: 11,
+                            color: r.status === "SKIPPED" ? "#6b7280" : r.passed ? "#4ade80" : "#f87171", fontWeight: 700
+                          }}>{r.id}</span>
+                          <div>
+                            <div style={{ color: r.status === "SKIPPED" ? "#6b7280" : "#e5e7eb", fontWeight: 600, fontSize: 12 }}>{r.name}</div>
+                            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>{r.status === "SKIPPED" ? "Skipped by configuration" : r.description}</div>
+                          </div>
+                          <span style={{ color: "#9ca3af", fontSize: 12, fontFamily: "monospace" }}>
+                            {r.status === "SKIPPED" ? "—" : r.actual !== undefined ? String(r.actual) : "—"}
+                          </span>
+                          <span style={{
+                            padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, textAlign: "center",
+                            background: r.status === "SKIPPED" ? "#1f2937" : r.passed ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                            color: r.status === "SKIPPED" ? "#9ca3af" : r.passed ? "#10b981" : "#ef4444",
+                            border: `1px solid ${r.status === "SKIPPED" ? "#374151" : r.passed ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                            transition: "all 0.2s ease"
+                          }}>{r.status === "SKIPPED" ? "SKIP" : r.passed ? "✓ PASS" : "✗ FAIL"}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
 
                   {/* Notes Tab */}
                   {activeTab === "notes" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>AI EXTRACTION NOTES</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeIn 0.3s ease" }}>
+                      <div style={{ 
+                        padding: "18px", 
+                        background: "rgba(17, 24, 39, 0.8)",
+                        backdropFilter: "blur(8px)",
+                        borderRadius: 12, 
+                        border: `1px solid ${colors.border}`,
+                        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                        transition: "all 0.3s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = colors.border;
+                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }}>
+                        <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>💡 EXTRACTION NOTES</div>
                         <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
                       </div>
-                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>FRAUD RISK ASSESSMENT</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{ flex: 1, height: 8, background: colors.dim, borderRadius: 4, overflow: "hidden" }}>
+
+                      <div style={{ 
+                        padding: "18px", 
+                        background: "rgba(17, 24, 39, 0.8)",
+                        backdropFilter: "blur(8px)",
+                        borderRadius: 12, 
+                        border: `1px solid ${colors.border}`,
+                        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                        transition: "all 0.3s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = colors.border;
+                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }}>
+                        <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>🛡️ FRAUD RISK ASSESSMENT</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                          <div style={{ flex: 1, height: 10, background: colors.dim, borderRadius: 6, overflow: "hidden" }}>
                             <div style={{
                               height: "100%", width: `${extracted.fraudScore || 0}%`,
-                              background: (extracted.fraudScore || 0) > 60 ? "#ef4444" : (extracted.fraudScore || 0) > 30 ? "#f59e0b" : "#4ade80",
-                              borderRadius: 4, transition: "width 0.8s ease"
+                              background: (extracted.fraudScore || 0) > 60 ? "linear-gradient(90deg, #ef4444, #f87171)" : (extracted.fraudScore || 0) > 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #10b981, #4ade80)",
+                              borderRadius: 6, transition: "width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)"
                             }} />
                           </div>
-                          <span style={{ fontFamily: "IBM Plex Mono", fontSize: 14, fontWeight: 700, minWidth: 40 }}>{extracted.fraudScore ?? 0}/100</span>
+                          <span style={{ fontFamily: "IBM Plex Mono", fontSize: 15, fontWeight: 700, minWidth: 50 }}>{extracted.fraudScore ?? 0}/100</span>
                         </div>
-                        <div style={{ fontSize: 12, color: colors.muted, marginTop: 6 }}>
-                          {(extracted.fraudScore || 0) <= 30 ? "Low risk — proceed normally" :
-                            (extracted.fraudScore || 0) <= 60 ? "Moderate risk — manual review recommended" :
-                              "High risk — escalate to fraud investigation unit"}
+                        <div style={{ fontSize: 13, color: colors.muted, lineHeight: 1.6 }}>
+                          {(extracted.fraudScore || 0) <= 30 ? "✓ Low risk — proceed normally" :
+                            (extracted.fraudScore || 0) <= 60 ? "⚠ Moderate risk — manual review recommended" :
+                              "🔴 High risk — escalate to fraud investigation unit"}
                         </div>
                       </div>
-                      <div style={{ padding: "16px", background: colors.card, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                        <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>SUPPORTING DOCUMENTS REFERENCED</div>
+
+                      <div style={{ 
+                        padding: "18px", 
+                        background: "rgba(17, 24, 39, 0.8)",
+                        backdropFilter: "blur(8px)",
+                        borderRadius: 12, 
+                        border: `1px solid ${colors.border}`,
+                        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                        transition: "all 0.3s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = colors.border;
+                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }}>
+                        <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>📄 SUPPORTING DOCUMENTS</div>
                         <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
                       </div>
-                      <div style={{ padding: "16px", background: "#1c1107", borderRadius: 8, border: `1px solid ${colors.accentDim}` }}>
-                        <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 8 }}>RECOMMENDED ACTIONS</div>
-                        <div style={{ fontSize: 13, color: "#fcd34d", lineHeight: 1.8 }}>
+
+                      <div style={{ 
+                        padding: "18px", 
+                        background: "rgba(28, 17, 7, 0.9)",
+                        backdropFilter: "blur(8px)",
+                        borderRadius: 12, 
+                        border: `2px solid rgba(245, 158, 11, 0.4)`,
+                        boxShadow: "0 4px 16px rgba(245, 158, 11, 0.1)",
+                        transition: "all 0.3s ease"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.25)`;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "rgba(245, 158, 11, 0.4)";
+                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(245, 158, 11, 0.1)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }}>
+                        <div style={{ fontSize: 11, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>✨ RECOMMENDED ACTIONS</div>
+                        <div style={{ fontSize: 13, color: "#fcd34d", lineHeight: 1.8, whiteSpace: "pre-line" }}>
                           {evaluation.routing === "STP"
                             ? "✓ All rules passed. Claim can be auto-processed without manual intervention.\n✓ Generate payment authorization.\n✓ Notify claimant of approval."
-                            : `• Route to: ${evaluation.escalateTo}\n• Reason(s): ${evaluation.escalationReasons.join(", ")}\n• Assign priority: ${(extracted.fraudScore || 0) > 60 || (extracted.claimAmount || 0) > 25000 ? "HIGH" : "MEDIUM"}`
+                            : `• Route to: ${evaluation.escalateTo}\n• Reason(s): ${evaluation.escalationReasons.join(", ")}\n• Priority: ${(extracted.fraudScore || 0) > 60 || (extracted.claimAmount || 0) > 25000 ? "HIGH" : "MEDIUM"}`
                           }
                         </div>
                       </div>
                     </div>
                   )}
 
-                  <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+                  <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
                     <button onClick={reset} style={{
-                      padding: "10px 20px", background: colors.card, border: `1px solid ${colors.border}`,
-                      borderRadius: 6, color: colors.text, cursor: "pointer", fontFamily: "'Barlow', sans-serif",
-                      fontWeight: 600, fontSize: 13, transition: "all 0.15s"
-                    }}>+ Process Another Claim</button>
+                      padding: "12px 28px", 
+                      background: "transparent", 
+                      border: `2px solid ${colors.border}`,
+                      borderRadius: 10, 
+                      color: colors.text, 
+                      cursor: "pointer", 
+                      fontFamily: "'Barlow', sans-serif",
+                      fontWeight: 700, 
+                      fontSize: 14, 
+                      transition: "all 0.3s ease",
+                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.accent;
+                      e.currentTarget.style.background = `rgba(245, 158, 11, 0.1)`;
+                      e.currentTarget.style.color = colors.accent;
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow = `0 8px 20px rgba(245, 158, 11, 0.2)`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = colors.text;
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.2)";
+                    }}>
+                      + Process Another Claim
+                    </button>
                   </div>
                 </div>
               )}
             </div>
 
             {/* ── Sidebar ── */}
-            <div style={{ padding: 20, background: colors.surface, maxHeight: "100vh", overflowY: "auto" }}>
+            <div style={{ padding: 24, background: "rgba(13, 17, 23, 0.9)", backdropFilter: "blur(4px)", maxHeight: "100vh", overflowY: "auto", borderLeft: `1px solid ${colors.border}` }}>
 
               {/* Analysis Settings */}
               <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: `1px solid ${colors.border}` }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 16, fontWeight: 700 }}>ANALYSIS SETTINGS</div>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 16, fontWeight: 700 }}>⚙️ ANALYSIS SETTINGS</div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {BUSINESS_RULES.map(rule => (
-                    <div key={rule.id} style={{ background: colors.card, padding: 12, borderRadius: 8, border: `1px solid ${colors.border}` }}>
+                    <div key={rule.id} style={{ 
+                      background: "rgba(17, 24, 39, 0.8)", 
+                      backdropFilter: "blur(8px)",
+                      padding: 12, 
+                      borderRadius: 10, 
+                      border: `1px solid ${colors.border}`,
+                      transition: "all 0.3s ease",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.accent;
+                      e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: rule.hasThreshold ? 12 : 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <input
                             type="checkbox"
                             checked={ruleConfig[rule.id].enabled}
@@ -575,11 +889,11 @@ export default function ClaimsProcessor() {
                               ...prev,
                               [rule.id]: { ...prev[rule.id], enabled: e.target.checked }
                             }))}
-                            style={{ cursor: "pointer", accentColor: colors.accent }}
+                            style={{ cursor: "pointer", accentColor: colors.accent, width: 18, height: 18 }}
                           />
                           <span style={{ fontSize: 12, fontWeight: 600, color: ruleConfig[rule.id].enabled ? colors.text : colors.muted }}>{rule.name}</span>
                         </div>
-                        <span style={{ fontFamily: "IBM Plex Mono", fontSize: 10, color: colors.muted }}>{rule.id}</span>
+                        <span style={{ fontFamily: "IBM Plex Mono", fontSize: 9, color: colors.muted }}>{rule.id}</span>
                       </div>
 
                       {rule.hasThreshold && ruleConfig[rule.id].enabled && (
@@ -594,14 +908,14 @@ export default function ClaimsProcessor() {
                               ...prev,
                               [rule.id]: { ...prev[rule.id], threshold: Number(e.target.value) }
                             }))}
-                            style={{ width: "100%", accentColor: colors.accent, height: 4, cursor: "pointer" }}
+                            style={{ width: "100%", accentColor: colors.accent, height: 5, cursor: "pointer", borderRadius: 3 }}
                           />
-                          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                            <span style={{ fontSize: 10, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.min.toLocaleString()}` : `${rule.min}%`}</span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: colors.accent }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                            <span style={{ fontSize: 9, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.min.toLocaleString()}` : `${rule.min}%`}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: colors.accent }}>
                               {rule.field === "claimAmount" ? `$${ruleConfig[rule.id].threshold.toLocaleString()}` : `${ruleConfig[rule.id].threshold}%`}
                             </span>
-                            <span style={{ fontSize: 10, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.max.toLocaleString()}` : `${rule.max}%`}</span>
+                            <span style={{ fontSize: 9, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.max.toLocaleString()}` : `${rule.max}%`}</span>
                           </div>
                         </div>
                       )}
@@ -611,32 +925,58 @@ export default function ClaimsProcessor() {
               </div>
 
               {/* Current Status */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>CURRENT STATUS</div>
+              <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: `1px solid ${colors.border}` }}>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>📊 CURRENT STATUS</div>
                 <StatusBadge status={stage === "processing" ? "PROCESSING" : stage === "done" ? evaluation?.routing : "IDLE"} />
                 {file && (
-                  <div style={{ marginTop: 10, padding: "10px 12px", background: colors.card, borderRadius: 6, border: `1px solid ${colors.border}` }}>
-                    <div style={{ fontSize: 11, color: colors.muted, marginBottom: 3 }}>Document</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{file.name}</div>
-                    <div style={{ fontSize: 11, color: colors.muted, marginTop: 3 }}>{(file.size / 1024).toFixed(1)} KB</div>
+                  <div style={{ 
+                    marginTop: 12, padding: "12px 14px", 
+                    background: "rgba(17, 24, 39, 0.8)",
+                    backdropFilter: "blur(8px)",
+                    borderRadius: 10, 
+                    border: `1px solid ${colors.border}`,
+                    animation: "slideIn 0.4s ease",
+                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
+                  }}>
+                    <div style={{ fontSize: 11, color: colors.muted, marginBottom: 4, fontWeight: 700 }}>DOCUMENT</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, wordBreak: "break-all", color: colors.text, marginBottom: 4 }}>{file.name}</div>
+                    <div style={{ fontSize: 11, color: colors.muted }}>{(file.size / 1024).toFixed(1)} KB</div>
                   </div>
                 )}
               </div>
 
               {/* Business Rules Reference */}
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>BUSINESS RULES</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {BUSINESS_RULES.map(r => (
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>📋 BUSINESS RULES</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {BUSINESS_RULES.map((r, idx) => (
                     <div key={r.id} style={{
-                      padding: "8px 10px", background: colors.card, borderRadius: 6,
-                      border: `1px solid ${colors.border}`, fontSize: 11
+                      padding: "10px 12px", 
+                      background: "rgba(17, 24, 39, 0.8)",
+                      backdropFilter: "blur(8px)",
+                      borderRadius: 8,
+                      border: `1px solid ${colors.border}`,
+                      fontSize: 11,
+                      transition: "all 0.3s ease",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
+                      animation: `slideIn 0.4s ease ${idx * 0.05}s backwards`
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = colors.accent;
+                      e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
+                      e.currentTarget.style.transform = "translateX(4px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = colors.border;
+                      e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
+                      e.currentTarget.style.transform = "translateX(0)";
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 10 }}>{r.id}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 9 }}>{r.id}</span>
                       </div>
-                      <div style={{ color: "#d1d5db", fontWeight: 600 }}>{r.name}</div>
-                      <div style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>{r.description}</div>
+                      <div style={{ color: "#d1d5db", fontWeight: 600, marginBottom: 2 }}>{r.name}</div>
+                      <div style={{ color: colors.muted, fontSize: 10, lineHeight: 1.4 }}>{r.description}</div>
                     </div>
                   ))}
                 </div>
@@ -644,26 +984,41 @@ export default function ClaimsProcessor() {
 
               {/* Processing Log */}
               <div>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 10 }}>
-                  PROCESSING LOG {claimsLog.length > 0 && `(${claimsLog.length})`}
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 12 }}>
+                  📋 PROCESSING LOG {claimsLog.length > 0 && `(${claimsLog.length})`}
                 </div>
                 {claimsLog.length === 0 ? (
                   <div style={{ fontSize: 12, color: colors.muted, fontStyle: "italic", padding: "10px 0" }}>No claims processed yet</div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {claimsLog.map(c => (
                       <div key={c.id} style={{
-                        padding: "8px 10px", background: colors.card, borderRadius: 6,
-                        border: `1px solid ${c.routing === "STP" ? "#166534" : "#7f1d1d"}`,
-                        fontSize: 11, animation: "slideIn 0.3s ease"
+                        padding: "10px 12px", 
+                        background: "rgba(17, 24, 39, 0.8)",
+                        backdropFilter: "blur(4px)",
+                        borderRadius: 8,
+                        border: `1px solid ${c.routing === "STP" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                        fontSize: 11, 
+                        animation: "slideIn 0.3s ease",
+                        transition: "all 0.2s ease",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateX(4px)";
+                        e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateX(0)";
+                        e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
                       }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                          <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#4ade80" : "#f87171" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                             {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
                           </span>
-                          <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 10 }}>{c.time}</span>
+                          <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time}</span>
                         </div>
-                        <div style={{ color: "#d1d5db" }}>{c.claimant}</div>
+                        <div style={{ color: "#d1d5db", fontWeight: 500, marginBottom: 2 }}>{c.claimant}</div>
                         <div style={{ color: colors.muted, fontSize: 10 }}>
                           {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
                         </div>

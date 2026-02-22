@@ -1,6 +1,7 @@
-import { SignedIn, SignedOut, SignIn, UserButton } from "@clerk/clerk-react"
+import { SignedIn, SignedOut, SignIn, SignUp, UserButton } from "@clerk/clerk-react"
+import AuthPage from "./AuthPage.jsx";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 // ─── Business Rules Engine ────────────────────────────────────────────────────
 const BUSINESS_RULES = [
@@ -265,17 +266,20 @@ export default function ClaimsProcessor() {
     }
   };
 
+  const [authMode, setAuthMode] = useState("sign-in");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode");
+    if (mode === "sign-up") setAuthMode("sign-up");
+    else setAuthMode("sign-in");
+  }, []);
+
   return (
     <>
       <style>{css}</style>
-      {/* Show sign-in if user is logged out */}
       <SignedOut>
-        <div style={{
-          background: colors.bg, minHeight: "100vh", display: "flex",
-          alignItems: "center", justifyContent: "center", padding: 20
-        }}>
-          <SignIn appearance={clerkAppearance} />
-        </div>
+        <AuthPage mode={authMode} />
       </SignedOut>
 
       {/* Show dashboard if user is signed in */}

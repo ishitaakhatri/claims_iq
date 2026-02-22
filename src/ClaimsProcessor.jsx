@@ -382,11 +382,22 @@ export default function ClaimsProcessor() {
                   }}
                 >
                   <div style={{
-                    fontSize: 72, marginBottom: 24,
+                    marginBottom: 24,
                     filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))",
                     transition: "all 0.3s ease",
-                    transform: dragOver ? "scale(1.15)" : "scale(1)"
-                  }}>📄</div>
+                    transform: dragOver ? "scale(1.1)" : "scale(1)"
+                  }}>
+                    <img
+                      src="/document_icon.jpg"
+                      alt="document"
+                      style={{
+                        width: 140,
+                        height: "auto",
+                        opacity: dragOver ? 1 : 0.9,
+                        transition: "all 0.3s ease"
+                      }}
+                    />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em", color: colors.text }}>
                     Drop your claims document
                   </div>

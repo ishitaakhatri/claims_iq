@@ -160,14 +160,17 @@ export default function ClaimsProcessor() {
 
       setClaimsLog(prev => [{
         id: Date.now(),
-        file: f.name,
+        file: f, // Store the full file object
+        fileName: f.name,
         claim: extracted_data.claimNumber || "N/A",
         claimant: extracted_data.claimantName || "Unknown",
         amount: extracted_data.claimAmount,
         routing: evaluation.routing,
         time: new Date().toLocaleTimeString(),
         confidence: evaluation.confidence,
-      }, ...prev.slice(0, 9)]);
+        extracted: extracted_data, // Store full extracted data
+        evaluation: evaluation,    // Store full evaluation
+      }, ...prev.slice(0, 19)]); // Increased log size slightly
     } catch (e) {
       console.error("❌ [Process] Error occurred:", e.message);
       console.error("❌ [Process] Full error:", e);
@@ -296,7 +299,7 @@ export default function ClaimsProcessor() {
           <div style={{
             borderBottom: `1px solid ${colors.border}`, padding: "0 24px",
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            height: 64, background: "rgba(13, 17, 23, 0.95)", 
+            height: 64, background: "rgba(13, 17, 23, 0.95)",
             backdropFilter: "blur(8px)",
             position: "sticky", top: 0, zIndex: 100,
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
@@ -323,13 +326,13 @@ export default function ClaimsProcessor() {
                 {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
               </div>
               <div style={{
-                padding: "6px 12px", 
+                padding: "6px 12px",
                 background: "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 46, 22, 0.2))",
                 border: "1.5px solid rgba(16, 185, 129, 0.4)",
-                borderRadius: 8, 
-                fontSize: 11, 
-                color: "#10b981", 
-                fontFamily: "IBM Plex Mono", 
+                borderRadius: 8,
+                fontSize: 11,
+                color: "#10b981",
+                fontFamily: "IBM Plex Mono",
                 fontWeight: 700,
                 letterSpacing: "0.05em",
                 display: "flex",
@@ -369,16 +372,16 @@ export default function ClaimsProcessor() {
                     transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)", marginBottom: 24,
                     minHeight: "520px", display: "flex", flexDirection: "column",
                     alignItems: "center", justifyContent: "center",
-                    boxShadow: dragOver 
-                      ? `0 0 60px ${colors.accent}33, inset 0 0 40px ${colors.accent}11` 
+                    boxShadow: dragOver
+                      ? `0 0 60px ${colors.accent}33, inset 0 0 40px ${colors.accent}11`
                       : "0 8px 32px rgba(0, 0, 0, 0.3)",
                     animation: "slideIn 0.5s ease-out",
                     transform: dragOver ? "scale(1.01)" : "scale(1)"
                   }}
                 >
-                  <div style={{ 
-                    fontSize: 72, marginBottom: 24, 
-                    filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))", 
+                  <div style={{
+                    fontSize: 72, marginBottom: 24,
+                    filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))",
                     transition: "all 0.3s ease",
                     transform: dragOver ? "scale(1.15)" : "scale(1)"
                   }}>📄</div>
@@ -401,12 +404,12 @@ export default function ClaimsProcessor() {
                     Browse Files
                   </div>
                   {stage === "error" && (
-                    <div style={{ 
-                      marginTop: 24, padding: "12px 16px", 
-                      background: "rgba(244, 63, 94, 0.1)", 
-                      border: "1px solid #f87171", 
-                      borderRadius: 10, 
-                      color: "#fca5a5", 
+                    <div style={{
+                      marginTop: 24, padding: "12px 16px",
+                      background: "rgba(244, 63, 94, 0.1)",
+                      border: "1px solid #f87171",
+                      borderRadius: 10,
+                      color: "#fca5a5",
                       fontSize: 13,
                       backdropFilter: "blur(4px)",
                       animation: "slideIn 0.3s ease"
@@ -425,7 +428,7 @@ export default function ClaimsProcessor() {
                   boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)"
                 }}>
                   <div style={{
-                    position: "absolute", left: 0, right: 0, height: 2, 
+                    position: "absolute", left: 0, right: 0, height: 2,
                     background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
                     animation: "scanline 1.5s linear infinite", top: 0
                   }} />
@@ -444,7 +447,7 @@ export default function ClaimsProcessor() {
                       <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                         <div style={{
                           width: 10, height: 10, borderRadius: "50%",
-                          background: colors.accent, 
+                          background: colors.accent,
                           animation: `pulse 1.4s ${i * 0.35}s infinite`,
                           boxShadow: `0 0 12px ${colors.accent}66`
                         }} />
@@ -462,13 +465,13 @@ export default function ClaimsProcessor() {
                   {/* Decision Banner */}
                   <div style={{
                     borderRadius: 16, padding: "24px 28px", marginBottom: 24,
-                    background: evaluation.routing === "STP" 
+                    background: evaluation.routing === "STP"
                       ? "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 46, 22, 0.3))"
                       : "linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(69, 10, 10, 0.3))",
                     border: `2px solid ${evaluation.routing === "STP" ? "#10b9814d" : "#ef4444cc"}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     animation: "slideIn 0.5s ease",
-                    boxShadow: evaluation.routing === "STP" 
+                    boxShadow: evaluation.routing === "STP"
                       ? "0 0 30px rgba(16, 185, 129, 0.2)"
                       : "0 0 30px rgba(239, 68, 68, 0.15)",
                     backdropFilter: "blur(8px)"
@@ -496,7 +499,7 @@ export default function ClaimsProcessor() {
                   <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24 }}>
                     {[
                       { id: "extraction", label: "Extracted Data" },
-                      { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed).length}/${evaluation.results.length})` },
+                      { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length}/${evaluation.results.filter(r => r.status !== "SKIPPED").length})` },
                       { id: "notes", label: "AI Notes" },
                     ].map(t => (
                       <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
@@ -543,88 +546,88 @@ export default function ClaimsProcessor() {
                         { label: "Completeness Score", key: "completeness" },
                       ].map(({ label, key }) => (
                         <div key={key} style={{
-                          padding: "14px 16px", 
+                          padding: "14px 16px",
                           background: "rgba(17, 24, 39, 0.8)",
                           backdropFilter: "blur(8px)",
-                          borderRadius: 12, 
+                          borderRadius: 12,
                           border: `1px solid ${colors.border}`,
                           transition: "all 0.3s ease",
                           cursor: "default",
                           boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                           animation: "slideIn 0.4s ease"
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = colors.accent;
-                          e.currentTarget.style.background = "rgba(17, 24, 39, 0.95)";
-                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = colors.border;
-                          e.currentTarget.style.background = "rgba(17, 24, 39, 0.8)";
-                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }}>
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = colors.accent;
+                            e.currentTarget.style.background = "rgba(17, 24, 39, 0.95)";
+                            e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = colors.border;
+                            e.currentTarget.style.background = "rgba(17, 24, 39, 0.8)";
+                            e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                            e.currentTarget.style.transform = "translateY(0)";
+                          }}>
                           <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>{label.toUpperCase()}</div>
                           <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>{fmt(extracted[key])}</div>
                         </div>
                       ))}
                       {extracted.claimantAddress && (
-                        <div style={{ 
-                          gridColumn: "1 / -1", padding: "14px 16px", 
+                        <div style={{
+                          gridColumn: "1 / -1", padding: "14px 16px",
                           background: "rgba(17, 24, 39, 0.8)",
                           backdropFilter: "blur(8px)",
-                          borderRadius: 12, 
+                          borderRadius: 12,
                           border: `1px solid ${colors.border}`,
                           boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                           animation: "slideIn 0.4s ease",
                           transition: "all 0.3s ease"
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = colors.accent;
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = colors.border;
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                        }}>
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = colors.accent;
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = colors.border;
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          }}>
                           <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>ADDRESS</div>
                           <div style={{ fontSize: 15, fontWeight: 600 }}>{extracted.claimantAddress}</div>
                         </div>
                       )}
                       {extracted.incidentDescription && (
-                        <div style={{ 
-                          gridColumn: "1 / -1", padding: "14px 16px", 
+                        <div style={{
+                          gridColumn: "1 / -1", padding: "14px 16px",
                           background: "rgba(17, 24, 39, 0.8)",
                           backdropFilter: "blur(8px)",
-                          borderRadius: 12, 
+                          borderRadius: 12,
                           border: `1px solid ${colors.border}`,
                           boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                           animation: "slideIn 0.4s ease",
                           transition: "all 0.3s ease"
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = colors.accent;
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = colors.border;
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                        }}>
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = colors.accent;
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = colors.border;
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          }}>
                           <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>INCIDENT DESCRIPTION</div>
                           <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.6 }}>{extracted.incidentDescription}</div>
                         </div>
                       )}
                       {extracted.missingFields?.length > 0 && (
-                        <div style={{ 
-                          gridColumn: "1 / -1", padding: "14px 16px", 
+                        <div style={{
+                          gridColumn: "1 / -1", padding: "14px 16px",
                           background: "rgba(28, 17, 7, 0.9)",
                           backdropFilter: "blur(8px)",
-                          borderRadius: 12, 
+                          borderRadius: 12,
                           border: `1px solid rgba(245, 158, 11, 0.4)`,
                           boxShadow: "0 4px 16px rgba(245, 158, 11, 0.1)",
                           animation: "slideIn 0.4s ease"
@@ -638,9 +641,9 @@ export default function ClaimsProcessor() {
 
                   {/* Rules Tab */}
                   {activeTab === "rules" && (
-                    <div style={{ 
-                      border: `1px solid ${colors.border}`, 
-                      borderRadius: 12, 
+                    <div style={{
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: 12,
                       overflow: "hidden",
                       boxShadow: "0 8px 24px rgba(0, 0, 0, 0.3)",
                       animation: "fadeIn 0.3s ease"
@@ -654,10 +657,10 @@ export default function ClaimsProcessor() {
                         <span></span><span>RULE ID</span><span>DESCRIPTION</span><span>ACTUAL</span><span>RESULT</span>
                       </div>
                       {evaluation.results.map((r, idx) => (
-                        <div key={r.id} 
+                        <div key={r.id}
                           style={{
                             display: "grid", gridTemplateColumns: "24px 80px 1fr 100px 80px",
-                            gap: 12, padding: "12px 14px", 
+                            gap: 12, padding: "12px 14px",
                             borderBottom: idx !== evaluation.results.length - 1 ? `1px solid ${colors.border}` : "none",
                             alignItems: "center", fontSize: 13,
                             opacity: r.status === "SKIPPED" ? 0.5 : 1,
@@ -703,48 +706,48 @@ export default function ClaimsProcessor() {
                   {/* Notes Tab */}
                   {activeTab === "notes" && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeIn 0.3s ease" }}>
-                      <div style={{ 
-                        padding: "18px", 
+                      <div style={{
+                        padding: "18px",
                         background: "rgba(17, 24, 39, 0.8)",
                         backdropFilter: "blur(8px)",
-                        borderRadius: 12, 
+                        borderRadius: 12,
                         border: `1px solid ${colors.border}`,
                         boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                         transition: "all 0.3s ease"
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = colors.accent;
-                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = colors.border;
-                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}>
                         <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>💡 EXTRACTION NOTES</div>
                         <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
                       </div>
 
-                      <div style={{ 
-                        padding: "18px", 
+                      <div style={{
+                        padding: "18px",
                         background: "rgba(17, 24, 39, 0.8)",
                         backdropFilter: "blur(8px)",
-                        borderRadius: 12, 
+                        borderRadius: 12,
                         border: `1px solid ${colors.border}`,
                         boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                         transition: "all 0.3s ease"
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = colors.accent;
-                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = colors.border;
-                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}>
                         <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>🛡️ FRAUD RISK ASSESSMENT</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                           <div style={{ flex: 1, height: 10, background: colors.dim, borderRadius: 6, overflow: "hidden" }}>
@@ -763,48 +766,48 @@ export default function ClaimsProcessor() {
                         </div>
                       </div>
 
-                      <div style={{ 
-                        padding: "18px", 
+                      <div style={{
+                        padding: "18px",
                         background: "rgba(17, 24, 39, 0.8)",
                         backdropFilter: "blur(8px)",
-                        borderRadius: 12, 
+                        borderRadius: 12,
                         border: `1px solid ${colors.border}`,
                         boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
                         transition: "all 0.3s ease"
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = colors.accent;
-                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = colors.border;
-                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = colors.border;
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}>
                         <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>📄 SUPPORTING DOCUMENTS</div>
                         <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
                       </div>
 
-                      <div style={{ 
-                        padding: "18px", 
+                      <div style={{
+                        padding: "18px",
                         background: "rgba(28, 17, 7, 0.9)",
                         backdropFilter: "blur(8px)",
-                        borderRadius: 12, 
+                        borderRadius: 12,
                         border: `2px solid rgba(245, 158, 11, 0.4)`,
                         boxShadow: "0 4px 16px rgba(245, 158, 11, 0.1)",
                         transition: "all 0.3s ease"
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = colors.accent;
-                        e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.25)`;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = "rgba(245, 158, 11, 0.4)";
-                        e.currentTarget.style.boxShadow = "0 4px 16px rgba(245, 158, 11, 0.1)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = colors.accent;
+                          e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.25)`;
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "rgba(245, 158, 11, 0.4)";
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(245, 158, 11, 0.1)";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}>
                         <div style={{ fontSize: 11, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>✨ RECOMMENDED ACTIONS</div>
                         <div style={{ fontSize: 13, color: "#fcd34d", lineHeight: 1.8, whiteSpace: "pre-line" }}>
                           {evaluation.routing === "STP"
@@ -818,32 +821,32 @@ export default function ClaimsProcessor() {
 
                   <div style={{ marginTop: 24, display: "flex", justifyContent: "flex-end" }}>
                     <button onClick={reset} style={{
-                      padding: "12px 28px", 
-                      background: "transparent", 
+                      padding: "12px 28px",
+                      background: "transparent",
                       border: `2px solid ${colors.border}`,
-                      borderRadius: 10, 
-                      color: colors.text, 
-                      cursor: "pointer", 
+                      borderRadius: 10,
+                      color: colors.text,
+                      cursor: "pointer",
                       fontFamily: "'Barlow', sans-serif",
-                      fontWeight: 700, 
-                      fontSize: 14, 
+                      fontWeight: 700,
+                      fontSize: 14,
                       transition: "all 0.3s ease",
                       boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)"
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = colors.accent;
-                      e.currentTarget.style.background = `rgba(245, 158, 11, 0.1)`;
-                      e.currentTarget.style.color = colors.accent;
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                      e.currentTarget.style.boxShadow = `0 8px 20px rgba(245, 158, 11, 0.2)`;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border;
-                      e.currentTarget.style.background = "transparent";
-                      e.currentTarget.style.color = colors.text;
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.2)";
-                    }}>
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.background = `rgba(245, 158, 11, 0.1)`;
+                        e.currentTarget.style.color = colors.accent;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow = `0 8px 20px rgba(245, 158, 11, 0.2)`;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = colors.border;
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = colors.text;
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.2)";
+                      }}>
                       + Process Another Claim
                     </button>
                   </div>
@@ -860,26 +863,26 @@ export default function ClaimsProcessor() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {BUSINESS_RULES.map(rule => (
-                    <div key={rule.id} style={{ 
-                      background: "rgba(17, 24, 39, 0.8)", 
+                    <div key={rule.id} style={{
+                      background: "rgba(17, 24, 39, 0.8)",
                       backdropFilter: "blur(8px)",
-                      padding: 12, 
-                      borderRadius: 10, 
+                      padding: 12,
+                      borderRadius: 10,
                       border: `1px solid ${colors.border}`,
                       transition: "all 0.3s ease",
                       cursor: "pointer",
                       boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = colors.accent;
-                      e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border;
-                      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
-                      e.currentTarget.style.transform = "translateY(0)";
-                    }}>
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = colors.accent;
+                        e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = colors.border;
+                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                      }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: rule.hasThreshold ? 12 : 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <input
@@ -929,11 +932,11 @@ export default function ClaimsProcessor() {
                 <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>📊 CURRENT STATUS</div>
                 <StatusBadge status={stage === "processing" ? "PROCESSING" : stage === "done" ? evaluation?.routing : "IDLE"} />
                 {file && (
-                  <div style={{ 
-                    marginTop: 12, padding: "12px 14px", 
+                  <div style={{
+                    marginTop: 12, padding: "12px 14px",
                     background: "rgba(17, 24, 39, 0.8)",
                     backdropFilter: "blur(8px)",
-                    borderRadius: 10, 
+                    borderRadius: 10,
                     border: `1px solid ${colors.border}`,
                     animation: "slideIn 0.4s ease",
                     boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
@@ -945,42 +948,7 @@ export default function ClaimsProcessor() {
                 )}
               </div>
 
-              {/* Business Rules Reference */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>📋 BUSINESS RULES</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {BUSINESS_RULES.map((r, idx) => (
-                    <div key={r.id} style={{
-                      padding: "10px 12px", 
-                      background: "rgba(17, 24, 39, 0.8)",
-                      backdropFilter: "blur(8px)",
-                      borderRadius: 8,
-                      border: `1px solid ${colors.border}`,
-                      fontSize: 11,
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
-                      boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)",
-                      animation: `slideIn 0.4s ease ${idx * 0.05}s backwards`
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = colors.accent;
-                      e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
-                      e.currentTarget.style.transform = "translateX(4px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border;
-                      e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
-                      e.currentTarget.style.transform = "translateX(0)";
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                        <span style={{ fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, fontSize: 9 }}>{r.id}</span>
-                      </div>
-                      <div style={{ color: "#d1d5db", fontWeight: 600, marginBottom: 2 }}>{r.name}</div>
-                      <div style={{ color: colors.muted, fontSize: 10, lineHeight: 1.4 }}>{r.description}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+
 
               {/* Processing Log */}
               <div>
@@ -993,25 +961,25 @@ export default function ClaimsProcessor() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {claimsLog.map(c => (
                       <div key={c.id} style={{
-                        padding: "10px 12px", 
+                        padding: "10px 12px",
                         background: "rgba(17, 24, 39, 0.8)",
                         backdropFilter: "blur(4px)",
                         borderRadius: 8,
                         border: `1px solid ${c.routing === "STP" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-                        fontSize: 11, 
+                        fontSize: 11,
                         animation: "slideIn 0.3s ease",
                         transition: "all 0.2s ease",
                         cursor: "pointer",
                         boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2)"
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = "translateX(4px)";
-                        e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = "translateX(0)";
-                        e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateX(4px)";
+                          e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateX(0)";
+                          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
+                        }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                           <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                             {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}

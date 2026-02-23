@@ -5,6 +5,11 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+# Add build argument to pass the clerk key so Vite bakes it into the build
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+
 RUN npm run build
 
 # Stage 2: Serve the React application with FastAPI

@@ -20,7 +20,8 @@ async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfi
   console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
   try {
-    const response = await fetch("http://localhost:8000/process-claim", {
+    const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+    const response = await fetch(`${apiUrl}/process-claim`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

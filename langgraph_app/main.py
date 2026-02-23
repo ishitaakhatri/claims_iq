@@ -2,6 +2,8 @@ import os
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from dotenv import load_dotenv
@@ -58,6 +60,17 @@ async def process_claim(request: ClaimRequest):
     except Exception as e:
         print(f"❌ Graph Execution Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Serve static files from the React build if available
+if os.path.exists("dist"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        file_path = os.path.join("dist", full_path)
+        if full_path and os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("dist/index.html")
 
 if __name__ == "__main__":
     import uvicorn

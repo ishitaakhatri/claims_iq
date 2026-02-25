@@ -1,5 +1,6 @@
 from .state import ClaimsState
 from ..tools.tools import call_azure_layout, call_openai_extraction
+import asyncio
 
 # ─── Business Rules Engine ────────────────────────────────────────────────────
 BUSINESS_RULES = [
@@ -55,6 +56,7 @@ def verify_single_rule(rule: dict, extracted_data: dict) -> dict:
 def ocr_node(state: ClaimsState):
     """OCR step using Azure"""
     print("---OCR NODE---")
+    # No artificial delay needed for OCR as it's naturally slow
     content = call_azure_layout(state["file_data"], state["file_type"])
     if not content:
         return {"error": "OCR failed (Azure)"}
@@ -63,6 +65,7 @@ def ocr_node(state: ClaimsState):
 def extraction_node(state: ClaimsState):
     """Extraction step using OpenAI"""
     print("---EXTRACTION NODE---")
+    # No artificial delay needed for extraction as it's naturally slow
     if state.get("error"): return state
     
     extracted = call_openai_extraction(state["ocr_content"], state["file_name"])
@@ -71,8 +74,9 @@ def extraction_node(state: ClaimsState):
     return {"extracted_data": extracted, "rule_results": []} # Initialize rule_results
 
 # Individual Rule Nodes
-def rule_br001_node(state: ClaimsState):
+async def rule_br001_node(state: ClaimsState):
     print("---RULE NODE BR001---")
+    await asyncio.sleep(0.15) # Artificial delay for UI visibility
     rule = BUSINESS_RULES[0].copy()
     config = (state.get("rule_config") or {}).get("BR001", {})
     
@@ -85,8 +89,9 @@ def rule_br001_node(state: ClaimsState):
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
-def rule_br002_node(state: ClaimsState):
+async def rule_br002_node(state: ClaimsState):
     print("---RULE NODE BR002---")
+    await asyncio.sleep(0.15)
     rule = BUSINESS_RULES[1].copy()
     config = (state.get("rule_config") or {}).get("BR002", {})
     
@@ -99,8 +104,9 @@ def rule_br002_node(state: ClaimsState):
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
-def rule_br003_node(state: ClaimsState):
+async def rule_br003_node(state: ClaimsState):
     print("---RULE NODE BR003---")
+    await asyncio.sleep(0.15)
     rule = BUSINESS_RULES[2].copy()
     config = (state.get("rule_config") or {}).get("BR003", {})
     
@@ -113,8 +119,9 @@ def rule_br003_node(state: ClaimsState):
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
-def rule_br004_node(state: ClaimsState):
+async def rule_br004_node(state: ClaimsState):
     print("---RULE NODE BR004---")
+    await asyncio.sleep(0.15)
     rule = BUSINESS_RULES[3].copy()
     config = (state.get("rule_config") or {}).get("BR004", {})
     
@@ -127,8 +134,9 @@ def rule_br004_node(state: ClaimsState):
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
-def rule_br005_node(state: ClaimsState):
+async def rule_br005_node(state: ClaimsState):
     print("---RULE NODE BR005---")
+    await asyncio.sleep(0.15)
     rule = BUSINESS_RULES[4].copy()
     config = (state.get("rule_config") or {}).get("BR005", {})
     
@@ -138,8 +146,9 @@ def rule_br005_node(state: ClaimsState):
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
-def rule_br006_node(state: ClaimsState):
+async def rule_br006_node(state: ClaimsState):
     print("---RULE NODE BR006---")
+    await asyncio.sleep(0.15)
     rule = BUSINESS_RULES[5].copy()
     config = (state.get("rule_config") or {}).get("BR006", {})
     
@@ -168,9 +177,10 @@ def rule_br006_node(state: ClaimsState):
     return {"rule_results": [result]}
 
 
-def evaluation_node(state: ClaimsState):
+async def evaluation_node(state: ClaimsState):
     """Business rules evaluation step - Aggregates results from parallel nodes"""
     print("---EVALUATION NODE---")
+    await asyncio.sleep(0.25) # Final summarizing delay
     if state.get("error"): return state
     
     results = state.get("rule_results", [])

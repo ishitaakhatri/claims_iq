@@ -3,10 +3,11 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -30,12 +31,12 @@ class ClaimRequest(BaseModel):
 @app.post("/process-claim")
 async def process_claim(request: ClaimRequest):
     """
-    Endpoint to process a claim document using LangGraph.
+    Endpoint to process a claim document using LangGraph with real-time streaming updates.
     """
     initial_state = {
         "file_data": request.file_data,
         "file_type": request.file_type,
-        "file_name": request.file_name,
+        "file_name": request.name if hasattr(request, 'name') else request.file_name,
         "ocr_content": None,
         "extracted_data": None,
         "rule_results": [],
@@ -45,21 +46,49 @@ async def process_claim(request: ClaimRequest):
         "error": None
     }
     
-    try:
-        # Running the graph
-        final_state = await app_graph.ainvoke(initial_state)
-        
-        if final_state.get("error"):
-            raise HTTPException(status_code=400, detail=final_state["error"])
+    async def event_generator():
+        state = initial_state.copy()
+        try:
+            # Yield initial starting message
+            yield f"data: {json.dumps({'node': 'start', 'status': 'started', 'message': 'Initializing engine...'})}\n\n"
+            yield f"data: {json.dumps({'node': 'start', 'status': 'completed'})}\n\n"
             
-        return {
-            "extracted_data": final_state["extracted_data"],
-            "evaluation": final_state["evaluation"]
-        }
-        
-    except Exception as e:
-        print(f"❌ Graph Execution Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+            # Running the graph in granular streaming mode
+            async for event in app_graph.astream_events(initial_state, version="v2"):
+                kind = event.get("event")
+                name = event.get("name")
+                
+                # We identify nodes by 'on_chain_start' / 'on_chain_end' with names matching graph nodes
+                # or 'on_chat_model_start' etc. if we wanted deeper info.
+                # For basic node tracking:
+                if kind == "on_chain_start" and name in ["ocr", "extraction", "br001", "br002", "br003", "br004", "br005", "br006", "evaluation"]:
+                    yield f"data: {json.dumps({'node': name, 'status': 'started'})}\n\n"
+                
+                elif kind == "on_chain_end":
+                    if name in ["ocr", "extraction", "br001", "br002", "br003", "br004", "br005", "br006", "evaluation"]:
+                        # When a node ends, we update our local state from its output
+                        output = event.get("data", {}).get("output")
+                        if isinstance(output, dict):
+                            state.update(output)
+                        yield f"data: {json.dumps({'node': name, 'status': 'completed'})}\n\n"
+            
+            # Send final state
+            if state.get("error"):
+                yield f"data: {json.dumps({'error': state['error']})}\n\n"
+            else:
+                final_payload = {
+                    "final_result": {
+                        "extracted_data": state.get("extracted_data"),
+                        "evaluation": state.get("evaluation")
+                    }
+                }
+                yield f"data: {json.dumps(final_payload)}\n\n"
+                
+        except Exception as e:
+            print(f"❌ Graph Execution Error: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # Serve static files from the React build if available
 if os.path.exists("dist"):

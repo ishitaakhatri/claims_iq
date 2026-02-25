@@ -14,9 +14,23 @@ const BUSINESS_RULES = [
   { id: "BR006", name: "Duplicate Claim Check", description: "No duplicate claim reference found", field: "isDuplicate", operator: "eq", value: false, weight: 45 },
 ];
 
+const NODE_MESSAGES = {
+  "start": "Initializing Agentic Engine",
+  "ocr": "Scanning document",
+  "extraction": "Extracting data fields",
+  "br001": "Checking Claim Amount Threshold",
+  "br002": "Evaluating High-Value Escalation",
+  "br003": "Validating Document Completeness",
+  "br004": "Analyzing Fraud Indicators",
+  "br005": "Verifying Policy Active Status",
+  "br006": "Running Duplicate Claim Check",
+  "evaluation": "Finalizing Routing Decision"
+};
+
+
 
 // ─── LangGraph Backend API Call ──────────────────────────────────────────────
-async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig) {
+async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog) {
   console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
   try {
@@ -34,13 +48,49 @@ async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfi
       }),
     });
 
-
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.detail || "Backend processing failed");
     }
 
-    const result = await response.json();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let result = null;
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || ""; // Keep any partial data for the next read
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+
+        const lines = part.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              if (data.node) {
+                onLog(data);
+              }
+              if (data.final_result) {
+                result = data.final_result;
+              }
+            } catch (e) {
+              console.error("❌ Error parsing JSON from stream:", e, "Part:", part);
+            }
+          }
+        }
+      }
+    }
+
     console.log("✅ [LangGraph Backend] Success:", result);
     return result;
   } catch (error) {
@@ -48,6 +98,7 @@ async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfi
     throw error;
   }
 }
+
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 function fileToBase64(file) {
@@ -128,6 +179,8 @@ export default function ClaimsProcessor() {
   const [claimsLog, setClaimsLog] = useState([]);
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailTab, setDetailTab] = useState("rules");
+  const [processingLogs, setProcessingLogs] = useState([]);
+
   const [ruleConfig, setRuleConfig] = useState(
     BUSINESS_RULES.reduce((acc, rule) => ({
       ...acc,
@@ -144,6 +197,7 @@ export default function ClaimsProcessor() {
     setError(null);
     setExtracted(null);
     setEvaluation(null);
+    setProcessingLogs([]);
 
     try {
       console.log("📥 [Process] Converting file to base64...");
@@ -151,8 +205,37 @@ export default function ClaimsProcessor() {
       console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
 
       console.log("📥 [Process] Starting LangGraph Backend execution...");
-      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig);
 
+      const onLog = (data) => {
+        const { node, status } = data;
+        setProcessingLogs(prev => {
+          const message = NODE_MESSAGES[node] || `Processing ${node}...`;
+          const existingIndex = prev.findIndex(l => l.node === node);
+
+          if (existingIndex >= 0) {
+            const newLogs = [...prev];
+            newLogs[existingIndex] = {
+              ...newLogs[existingIndex],
+              status,
+              time: new Date().toLocaleTimeString()
+            };
+            return newLogs;
+          } else {
+            return [...prev, {
+              node,
+              message,
+              status,
+              time: new Date().toLocaleTimeString()
+            }];
+          }
+        });
+      };
+
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog);
+
+      if (!result) {
+        throw new Error("No result received from processing engine.");
+      }
 
       const { extracted_data, evaluation } = result;
       console.log("✅ [Process] Backend complete. Routing:", evaluation.routing, "Confidence:", evaluation.confidence + "%");
@@ -182,6 +265,7 @@ export default function ClaimsProcessor() {
       setStage("error");
     }
   }, [ruleConfig]);
+
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -427,41 +511,126 @@ export default function ClaimsProcessor() {
                 </div>
               ) : stage === "processing" ? (
                 <div style={{
-                  border: `1px solid ${colors.border}`, borderRadius: 16, padding: "60px 24px",
+                  border: `1px solid ${colors.border}`, borderRadius: 16, padding: "40px 24px",
                   textAlign: "center", background: "rgba(13, 17, 23, 0.8)",
                   backdropFilter: "blur(8px)", marginBottom: 24,
                   animation: "slideIn 0.3s ease", position: "relative", overflow: "hidden",
-                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)"
+                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+                  minHeight: "520px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center"
                 }}>
                   <div style={{
                     position: "absolute", left: 0, right: 0, height: 2,
                     background: `linear-gradient(90deg, transparent, ${colors.accent}, transparent)`,
                     animation: "scanline 1.5s linear infinite", top: 0
                   }} />
-                  <div style={{
-                    width: 56, height: 56, border: `3px solid ${colors.dim}`,
-                    borderTopColor: colors.accent, borderRadius: "50%",
-                    animation: "spin 0.9s linear infinite", margin: "0 auto 20px",
-                    boxShadow: `0 0 20px ${colors.accent}44`
-                  }} />
-                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, color: colors.text }}>Processing Document</div>
-                  <div style={{ fontSize: 14, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 24 }}>
-                    {file?.name}
-                  </div>
-                  <div style={{ marginTop: 24, display: "flex", justifyContent: "center", gap: 32, fontSize: 13, color: colors.muted }}>
-                    {["Ingesting", "Extracting", "Evaluating", "Routing"].map((s, i) => (
-                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                        <div style={{
-                          width: 10, height: 10, borderRadius: "50%",
-                          background: colors.accent,
-                          animation: `pulse 1.4s ${i * 0.35}s infinite`,
-                          boxShadow: `0 0 12px ${colors.accent}66`
-                        }} />
-                        <span style={{ fontWeight: 500 }}>{s}</span>
-                      </div>
-                    ))}
+
+                  <div style={{ padding: "0 20px", width: "100%", maxWidth: 600 }}>
+                    <div style={{
+                      width: 56, height: 56, border: `3px solid ${colors.dim}`,
+                      borderTopColor: colors.accent, borderRadius: "50%",
+                      animation: "spin 0.9s linear infinite", margin: "0 auto 24px",
+                      boxShadow: `0 0 20px ${colors.accent}44`
+                    }} />
+
+                    <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: colors.text }}>Processing Claim</div>
+                    <div style={{ fontSize: 14, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 32 }}>
+                      {file?.name}
+                    </div>
+
+                    {/* Processing Logs */}
+                    <div style={{
+                      background: "rgba(3, 7, 18, 0.6)",
+                      borderRadius: 12,
+                      border: `1px solid ${colors.border}`,
+                      padding: 16,
+                      textAlign: "left",
+                      maxHeight: 280,
+                      overflowY: "auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      boxShadow: "inset 0 2px 10px rgba(0,0,0,0.5)"
+                    }}>
+                      {processingLogs.length === 0 ? (
+                        <div style={{ color: colors.muted, fontSize: 13, textAlign: "center", padding: "20px 0" }}>
+                          Waiting for engine signals...
+                        </div>
+                      ) : (
+                        processingLogs.map((log, i) => {
+                          const isActive = log.status === "started";
+                          const isLast = i === processingLogs.length - 1;
+
+                          return (
+                            <div key={i} style={{
+                              display: "flex",
+                              gap: 12,
+                              alignItems: "flex-start",
+                              animation: "slideIn 0.3s ease-out",
+                              opacity: isLast || isActive ? 1 : 0.5,
+                              padding: "8px 0",
+                              borderBottom: isLast ? "none" : `1px solid ${colors.border}33`,
+                              transition: "all 0.3s ease"
+                            }}>
+                              <div style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: "50%",
+                                background: isActive ? colors.accent : "#10b981",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 9,
+                                color: "#000",
+                                fontWeight: 900,
+                                marginTop: 2,
+                                boxShadow: isActive ? `0 0 10px ${colors.accent}88` : "none",
+                                animation: isActive ? "pulse 1.5s infinite" : "none"
+                              }}>
+                                {isActive ? "▶" : "✓"}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{
+                                  fontSize: 13,
+                                  fontWeight: isLast || isActive ? 700 : 500,
+                                  color: isActive ? colors.accent : colors.text,
+                                  transition: "color 0.3s ease"
+                                }}>
+                                  {log.message} {isActive && "..."}
+                                </div>
+                                <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginTop: 2, opacity: 0.8 }}>
+                                  {log.time}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={el => el?.scrollIntoView({ behavior: "smooth" })} />
+                    </div>
+
+                    <div style={{ marginTop: 32, display: "flex", justifyContent: "center", gap: 32, fontSize: 11, color: colors.muted, opacity: 0.8 }}>
+                      {["Ingest", "Extract", "Analyze", "Route"].map((s, i) => {
+                        const active = (i === 0 && processingLogs.some(l => l.node === "ocr")) ||
+                          (i === 1 && processingLogs.some(l => l.node === "extraction")) ||
+                          (i === 2 && processingLogs.some(l => l.node.startsWith("br0"))) ||
+                          (i === 3 && processingLogs.some(l => l.node === "evaluation"));
+
+                        return (
+                          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                            <div style={{
+                              width: 8, height: 8, borderRadius: "50%",
+                              background: active ? colors.accent : colors.dim,
+                              boxShadow: active ? `0 0 10px ${colors.accent}66` : "none",
+                              transition: "all 0.4s ease"
+                            }} />
+                            <span style={{ fontWeight: active ? 700 : 500, color: active ? colors.text : colors.muted }}>{s.toUpperCase()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
+
               ) : null}
 
               {/* Results */}

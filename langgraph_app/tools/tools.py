@@ -77,7 +77,10 @@ Return ONLY a valid JSON object with these exact fields:
   "fraudReasons": ["IMPORTANT: Always provide specific, actionable reasons if fraudScore > 20. Examples: 'Missing incident description', 'Claim amount inconsistent with incident type', 'Filing date much later than incident date', 'Policy status marked as inactive', 'Suspicious document formatting', 'Unexplained gaps in documentation', 'Claim amount exceeds typical range for this claim type', 'Inconsistent claimant information across document'. Even for moderate scores, provide at least 2-3 specific reasons."],
   "isDuplicate": false,
   "extractionNotes": "any important observations about the data or layout",
-  "missingFields": ["list of important missing fields"]
+  "missingFields": ["list of important missing fields"],
+  "additionalFields": {
+    "description": "A dictionary capturing EVERY other field, detail, data point, line item, or piece of information found in the document that is NOT already covered by the fixed fields above. Use human-readable camelCase keys and preserve the original values. Examples: diagnosisCode, deductibleAmount, adjusterName, providerNPI, treatmentDate, serviceDescription, copayAmount, priorAuthNumber, referralNumber, employerName, dateOfBirth, gender, relationshipToInsured, groupNumber, planName, billingCode, unitCount, allowedAmount, patientAccountNumber, renderingProvider, facilityName, placeOfService, referringPhysician, accidentDate, accidentLocation, witnessInfo, policeReportNumber, damageDescription, repairEstimate, replacementCost, etc. Include ALL data you can find — do not omit anything. If no additional fields exist, use an empty object {}."
+  }
 }
 
 CRITICAL INSTRUCTIONS FOR fraudScore AND fraudReasons:
@@ -86,7 +89,14 @@ CRITICAL INSTRUCTIONS FOR fraudScore AND fraudReasons:
 - If fraudScore is 41-60: MUST provide 2-3 specific reasons in fraudReasons array
 - If fraudScore is 61+: MUST provide 3+ specific reasons in fraudReasons array
 - Reasons must be specific to THIS document, not generic
-- Each reason should be a clear, actionable statement"""
+- Each reason should be a clear, actionable statement
+
+CRITICAL INSTRUCTIONS FOR additionalFields:
+- Scan the ENTIRE document text thoroughly for ANY data not captured in the fixed fields
+- Include every single piece of identifiable information: dates, codes, amounts, names, IDs, descriptions, statuses, addresses, phone numbers, etc.
+- Use descriptive camelCase keys (e.g. "diagnosisCode", "treatmentDate", "deductibleAmount")
+- For line items or repeated data, use arrays or numbered keys (e.g. "serviceItem1", "serviceItem2")
+- Do NOT leave this empty if there is additional data in the document"""
 
     try:
         response = client.chat.completions.create(

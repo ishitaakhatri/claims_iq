@@ -115,7 +115,16 @@ function fmt(val) {
   if (typeof val === "boolean") return val ? "Yes" : "No";
   if (typeof val === "number" && val > 100) return `$${val.toLocaleString()}`;
   if (Array.isArray(val)) return val.length ? val.join(", ") : <span style={{ color: "#6b7280", fontStyle: "italic" }}>None</span>;
+  if (typeof val === "object" && val !== null) return JSON.stringify(val);
   return String(val);
+}
+
+function camelToLabel(key) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/([0-9]+)/g, " $1")
+    .trim()
+    .toUpperCase();
 }
 
 // ─── Components ───────────────────────────────────────────────────────────────
@@ -810,6 +819,49 @@ export default function ClaimsProcessor() {
                           <div style={{ fontSize: 11, color: colors.accent, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>⚠ MISSING FIELDS</div>
                           <div style={{ fontSize: 13, color: "#fcd34d" }}>{extracted.missingFields.join(", ")}</div>
                         </div>
+                      )}
+
+                      {/* Additional Fields from Document */}
+                      {extracted.additionalFields && Object.keys(extracted.additionalFields).length > 0 && (
+                        <>
+                          <div style={{
+                            gridColumn: "1 / -1", fontSize: 12, fontFamily: "IBM Plex Mono",
+                            color: colors.accent, letterSpacing: "0.08em", fontWeight: 700,
+                            marginTop: 8, paddingTop: 16, borderTop: `1px solid ${colors.border}`,
+                            display: "flex", alignItems: "center", gap: 8
+                          }}>
+                            <span>📋</span> ADDITIONAL DETAILS
+                          </div>
+                          {Object.entries(extracted.additionalFields).map(([key, value]) => (
+                            <div key={key} style={{
+                              padding: "14px 16px",
+                              background: "rgba(17, 24, 39, 0.8)",
+                              backdropFilter: "blur(8px)",
+                              borderRadius: 12,
+                              border: `1px solid ${colors.border}`,
+                              transition: "all 0.3s ease",
+                              cursor: "default",
+                              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                              animation: "slideIn 0.4s ease",
+                              gridColumn: (typeof value === "string" && value.length > 60) || (Array.isArray(value) && value.length > 2) || (typeof value === "object" && !Array.isArray(value) && value !== null) ? "1 / -1" : undefined
+                            }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = colors.accent;
+                                e.currentTarget.style.background = "rgba(17, 24, 39, 0.95)";
+                                e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                                e.currentTarget.style.transform = "translateY(-2px)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = colors.border;
+                                e.currentTarget.style.background = "rgba(17, 24, 39, 0.8)";
+                                e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                                e.currentTarget.style.transform = "translateY(0)";
+                              }}>
+                              <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>{camelToLabel(key)}</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>{fmt(value)}</div>
+                            </div>
+                          ))}
+                        </>
                       )}
                     </div>
                   )}
@@ -1543,6 +1595,44 @@ export default function ClaimsProcessor() {
                       }}>
                         <div style={{ fontSize: 10, color: colors.accent, fontFamily: "IBM Plex Mono", marginBottom: 6, fontWeight: 700 }}>⚠ MISSING FIELDS</div>
                         <div style={{ fontSize: 12, color: "#fcd34d" }}>{selectedLog.extracted.missingFields.join(", ")}</div>
+                      </div>
+                    )}
+
+                    {/* Additional Fields from Document */}
+                    {selectedLog.extracted.additionalFields && Object.keys(selectedLog.extracted.additionalFields).length > 0 && (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{
+                          fontSize: 11, fontFamily: "IBM Plex Mono",
+                          color: colors.accent, letterSpacing: "0.08em", fontWeight: 700,
+                          marginBottom: 14, display: "flex", alignItems: "center", gap: 8
+                        }}>
+                          <span>📋</span> ADDITIONAL DETAILS
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14 }}>
+                          {Object.entries(selectedLog.extracted.additionalFields).map(([key, value]) => (
+                            <div key={key} style={{
+                              padding: "12px 14px", background: "rgba(17, 24, 39, 0.8)",
+                              borderRadius: 8, border: `1px solid ${colors.border}`,
+                              transition: "all 0.2s ease",
+                              gridColumn: (typeof value === "string" && value.length > 60) || (Array.isArray(value) && value.length > 2) || (typeof value === "object" && !Array.isArray(value) && value !== null) ? "1 / -1" : undefined
+                            }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = colors.accent;
+                                e.currentTarget.style.transform = "translateY(-2px)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = colors.border;
+                                e.currentTarget.style.transform = "translateY(0)";
+                              }}>
+                              <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginBottom: 4, fontWeight: 700 }}>
+                                {camelToLabel(key)}
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: colors.text }}>
+                                {fmt(value)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

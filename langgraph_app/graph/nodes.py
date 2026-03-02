@@ -15,6 +15,26 @@ BUSINESS_RULES = [
 # Global variable to store the last processed claim data for duplicate check
 LAST_CLAIM_DATA = None
 
+def update_rule_description(rule: dict) -> str:
+    """
+    Dynamically generates description based on current rule value/threshold.
+    """
+    val = rule.get("value")
+    field = rule.get("field")
+    
+    if rule["id"] == "BR001":
+        formatted_val = f"${val:,}" if isinstance(val, (int, float)) else val
+        return f"Claims ≤ {formatted_val} auto-approved"
+    elif rule["id"] == "BR002":
+        formatted_val = f"${val:,}" if isinstance(val, (int, float)) else val
+        return f"Claims > {formatted_val} require senior review"
+    elif rule["id"] == "BR003":
+        return f"All required fields must be present (Min {val}%)"
+    elif rule["id"] == "BR004":
+        return f"No fraud flags detected (Threshold ≤ {val})"
+    
+    return rule.get("description", "")
+
 def verify_single_rule(rule: dict, extracted_data: dict) -> dict:
     """
     Evaluates a single business rule against extracted data.
@@ -86,6 +106,7 @@ async def rule_br001_node(state: ClaimsState):
     if "threshold" in config:
         rule["value"] = config["threshold"]
         
+    rule["description"] = update_rule_description(rule)
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
@@ -101,6 +122,7 @@ async def rule_br002_node(state: ClaimsState):
     if "threshold" in config:
         rule["value"] = config["threshold"]
         
+    rule["description"] = update_rule_description(rule)
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
@@ -116,6 +138,7 @@ async def rule_br003_node(state: ClaimsState):
     if "threshold" in config:
         rule["value"] = config["threshold"]
         
+    rule["description"] = update_rule_description(rule)
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 
@@ -131,6 +154,7 @@ async def rule_br004_node(state: ClaimsState):
     if "threshold" in config:
         rule["value"] = config["threshold"]
         
+    rule["description"] = update_rule_description(rule)
     result = verify_single_rule(rule, state["extracted_data"])
     return {"rule_results": [result]}
 

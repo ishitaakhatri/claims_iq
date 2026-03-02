@@ -3,12 +3,7 @@ from .state import ClaimsState
 from .nodes import (
     ocr_node, 
     extraction_node, 
-    rule_br001_node, 
-    rule_br002_node, 
-    rule_br003_node, 
-    rule_br004_node, 
-    rule_br005_node, 
-    rule_br006_node, 
+    rule_engine_node,
     evaluation_node
 )
 
@@ -22,13 +17,8 @@ def create_graph():
     workflow.add_node("ocr", ocr_node)
     workflow.add_node("extraction", extraction_node)
     
-    # Adding rule nodes
-    workflow.add_node("br001", rule_br001_node)
-    workflow.add_node("br002", rule_br002_node)
-    workflow.add_node("br003", rule_br003_node)
-    workflow.add_node("br004", rule_br004_node)
-    workflow.add_node("br005", rule_br005_node)
-    workflow.add_node("br006", rule_br006_node)
+    # Adding rule engine node
+    workflow.add_node("rule_engine", rule_engine_node)
     
     workflow.add_node("evaluation", evaluation_node)
 
@@ -36,21 +26,9 @@ def create_graph():
     workflow.add_edge(START, "ocr")
     workflow.add_edge("ocr", "extraction")
     
-    # Fan-out: Parallel rule processing
-    workflow.add_edge("extraction", "br001")
-    workflow.add_edge("extraction", "br002")
-    workflow.add_edge("extraction", "br003")
-    workflow.add_edge("extraction", "br004")
-    workflow.add_edge("extraction", "br005")
-    workflow.add_edge("extraction", "br006")
-    
-    # Fan-in: Wait for all rules to complete
-    workflow.add_edge("br001", "evaluation")
-    workflow.add_edge("br002", "evaluation")
-    workflow.add_edge("br003", "evaluation")
-    workflow.add_edge("br004", "evaluation")
-    workflow.add_edge("br005", "evaluation")
-    workflow.add_edge("br006", "evaluation")
+    # Sequential Rule Engine
+    workflow.add_edge("extraction", "rule_engine")
+    workflow.add_edge("rule_engine", "evaluation")
     
     workflow.add_edge("evaluation", END)
 

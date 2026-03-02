@@ -1,15 +1,97 @@
 from .state import ClaimsState
 from ..tools.tools import call_azure_layout, call_openai_extraction
 import asyncio
-
 # ─── Business Rules Engine ────────────────────────────────────────────────────
 BUSINESS_RULES = [
-    {"id": "BR001", "name": "Claim Amount Threshold", "description": "Claims ≤ $5,000 auto-approved", "field": "claimAmount", "operator": "lte", "value": 5000, "weight": 30},
-    {"id": "BR002", "name": "High-Value Escalation", "description": "Claims > $25,000 require senior review", "field": "claimAmount", "operator": "lte", "value": 25000, "weight": 40},
-    {"id": "BR003", "name": "Document Completeness", "description": "All required fields must be present", "field": "completeness", "operator": "gte", "value": 80, "weight": 25},
-    {"id": "BR004", "name": "Fraud Indicators", "description": "No fraud flags detected", "field": "fraudScore", "operator": "lte", "value": 30, "weight": 50},
-    {"id": "BR005", "name": "Policy Active Status", "description": "Policy must be active at time of claim", "field": "policyStatus", "operator": "eq", "value": "active", "weight": 35},
-    {"id": "BR006", "name": "Duplicate Claim Check", "description": "No duplicate claim reference found", "field": "isDuplicate", "operator": "eq", "value": False, "weight": 45},
+    {
+      "id": "BR001",
+      "name": "Claim Amount Threshold",
+      "description": "Claims ≤ $5,000 auto-approved",
+      "rule_type": "threshold",
+      "weight": 30,
+      "priority": 1,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "claimAmount",
+        "operator": "lte",
+        "value": 5000
+      }
+    },
+    {
+      "id": "BR002",
+      "name": "High-Value Escalation",
+      "description": "Claims > $25,000 require senior review",
+      "rule_type": "threshold",
+      "weight": 40,
+      "priority": 2,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "claimAmount",
+        "operator": "lte", # Using LTE 25000 for "Passed" status (No Escalation)
+        "value": 25000
+      }
+    },
+    {
+      "id": "BR003",
+      "name": "Document Completeness",
+      "description": "All required fields must be present (Min 80%)",
+      "rule_type": "threshold",
+      "weight": 25,
+      "priority": 3,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "completeness",
+        "operator": "gte",
+        "value": 80
+      }
+    },
+    {
+      "id": "BR004",
+      "name": "Fraud Indicators",
+      "description": "No fraud flags detected (Threshold ≤ 30)",
+      "rule_type": "threshold",
+      "weight": 50,
+      "priority": 4,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "fraudScore",
+        "operator": "lte",
+        "value": 30
+      }
+    },
+    {
+      "id": "BR005",
+      "name": "Policy Active Status",
+      "description": "Policy must be active at time of claim",
+      "rule_type": "comparison",
+      "weight": 35,
+      "priority": 5,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "policyStatus",
+        "operator": "eq",
+        "value": "active"
+      }
+    },
+    {
+      "id": "BR006",
+      "name": "Duplicate Claim Check",
+      "description": "No duplicate claim reference found",
+      "rule_type": "cross_field",
+      "weight": 45,
+      "priority": 6,
+      "version": 1,
+      "is_active": True,
+      "config": {
+        "field_name": "claimNumber",
+        "operator": "not_duplicate"
+      }
+    }
 ]
 
 # Global variable to store the last processed claim data for duplicate check
@@ -19,8 +101,8 @@ def update_rule_description(rule: dict) -> str:
     """
     Dynamically generates description based on current rule value/threshold.
     """
-    val = rule.get("value")
-    field = rule.get("field")
+    config = rule.get("config", {})
+    val = config.get("value")
     
     if rule["id"] == "BR001":
         formatted_val = f"${val:,}" if isinstance(val, (int, float)) else val
@@ -39,17 +121,18 @@ def verify_single_rule(rule: dict, extracted_data: dict) -> dict:
     """
     Evaluates a single business rule against extracted data.
     """
-    field = rule["field"]
+    config = rule.get("config", {})
+    field = config.get("field_name")
     raw_val = extracted_data.get(field)
     passed = False
     actual = raw_val
 
-    if raw_val is None:
+    if raw_val is None and config.get("operator") != "not_duplicate":
         passed = False
         actual = "N/A"
     else:
-        op = rule["operator"]
-        val = rule["value"]
+        op = config.get("operator")
+        val = config.get("value")
         
         try:
             if op == "lte": passed = float(raw_val) <= float(val)
@@ -61,9 +144,13 @@ def verify_single_rule(rule: dict, extracted_data: dict) -> dict:
                     passed = bool(raw_val) == val
                 else:
                     passed = str(raw_val).lower() == str(val).lower()
+            elif op == "not_duplicate":
+                # Special logic for duplicate check
+                is_duplicate = extracted_data.get("isDuplicate", False)
+                passed = not is_duplicate
+                actual = "Duplicate Found" if is_duplicate else "Unique"
             else: passed = False
         except (ValueError, TypeError):
-            # Fallback for non-numeric comparisons if float() fails
             if op == "eq":
                 passed = str(raw_val).lower() == str(val).lower()
             else:
@@ -93,112 +180,49 @@ def extraction_node(state: ClaimsState):
         return {"error": "Extraction failed (OpenAI)"}
     return {"extracted_data": extracted, "rule_results": []} # Initialize rule_results
 
-# Individual Rule Nodes
-async def rule_br001_node(state: ClaimsState):
-    print("---RULE NODE BR001---")
-    await asyncio.sleep(0.15) # Artificial delay for UI visibility
-    rule = BUSINESS_RULES[0].copy()
-    config = (state.get("rule_config") or {}).get("BR001", {})
+async def rule_engine_node(state: ClaimsState):
+    """
+    Consolidated Rule Engine Node.
+    Iterates through all business rules and evaluates them.
+    """
+    print("---RULE ENGINE NODE---")
+    if state.get("error"): return state
     
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
+    results = []
+    extracted_data = state["extracted_data"].copy()
     
-    if "threshold" in config:
-        rule["value"] = config["threshold"]
-        
-    rule["description"] = update_rule_description(rule)
-    result = verify_single_rule(rule, state["extracted_data"])
-    return {"rule_results": [result]}
-
-async def rule_br002_node(state: ClaimsState):
-    print("---RULE NODE BR002---")
-    await asyncio.sleep(0.15)
-    rule = BUSINESS_RULES[1].copy()
-    config = (state.get("rule_config") or {}).get("BR002", {})
-    
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-        
-    if "threshold" in config:
-        rule["value"] = config["threshold"]
-        
-    rule["description"] = update_rule_description(rule)
-    result = verify_single_rule(rule, state["extracted_data"])
-    return {"rule_results": [result]}
-
-async def rule_br003_node(state: ClaimsState):
-    print("---RULE NODE BR003---")
-    await asyncio.sleep(0.15)
-    rule = BUSINESS_RULES[2].copy()
-    config = (state.get("rule_config") or {}).get("BR003", {})
-    
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-        
-    if "threshold" in config:
-        rule["value"] = config["threshold"]
-        
-    rule["description"] = update_rule_description(rule)
-    result = verify_single_rule(rule, state["extracted_data"])
-    return {"rule_results": [result]}
-
-async def rule_br004_node(state: ClaimsState):
-    print("---RULE NODE BR004---")
-    await asyncio.sleep(0.15)
-    rule = BUSINESS_RULES[3].copy()
-    config = (state.get("rule_config") or {}).get("BR004", {})
-    
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-        
-    if "threshold" in config:
-        rule["value"] = config["threshold"]
-        
-    rule["description"] = update_rule_description(rule)
-    result = verify_single_rule(rule, state["extracted_data"])
-    return {"rule_results": [result]}
-
-async def rule_br005_node(state: ClaimsState):
-    print("---RULE NODE BR005---")
-    await asyncio.sleep(0.15)
-    rule = BUSINESS_RULES[4].copy()
-    config = (state.get("rule_config") or {}).get("BR005", {})
-    
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-        
-    result = verify_single_rule(rule, state["extracted_data"])
-    return {"rule_results": [result]}
-
-async def rule_br006_node(state: ClaimsState):
-    print("---RULE NODE BR006---")
-    await asyncio.sleep(0.15)
-    rule = BUSINESS_RULES[5].copy()
-    config = (state.get("rule_config") or {}).get("BR006", {})
-    
-    if not config.get("enabled", True):
-        return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-    
-    # Simple duplicate check logic
-    current_claim_num = state["extracted_data"].get("claimNumber")
+    # Pre-process Duplicate Check
+    current_claim_num = extracted_data.get("claimNumber")
     is_duplicate = False
-    
-    print(f"DEBUG BR006: Current Claim Num: {current_claim_num}")
     if LAST_CLAIM_DATA:
-        last_claim_num = LAST_CLAIM_DATA.get("claimNumber")
-        print(f"DEBUG BR006: Last Claim Num: {last_claim_num}")
-        if current_claim_num and current_claim_num == last_claim_num:
+        if current_claim_num and current_claim_num == LAST_CLAIM_DATA.get("claimNumber"):
             is_duplicate = True
-    else:
-        print("DEBUG BR006: No LAST_CLAIM_DATA found")
-        
-    print(f"DEBUG BR006: Is Duplicate: {is_duplicate}")
-    
-    # Merge the result into the extracted data for rule verification
-    data_for_rule = {**state["extracted_data"], "isDuplicate": is_duplicate}
+    extracted_data["isDuplicate"] = is_duplicate
 
-    result = verify_single_rule(rule, data_for_rule)
-    return {"rule_results": [result]}
+    for base_rule in BUSINESS_RULES:
+        if not base_rule.get("is_active", True):
+            continue
+            
+        rule = base_rule.copy()
+        rule_id = rule["id"]
+        
+        # Merge runtime configuration if present
+        config_override = (state.get("rule_config") or {}).get(rule_id, {})
+        if not config_override.get("enabled", True):
+            results.append({**rule, "status": "SKIPPED", "passed": True})
+            continue
+            
+        if "threshold" in config_override:
+            rule["config"]["value"] = config_override["threshold"]
+            rule["description"] = update_rule_description(rule)
+
+        # Artificial delay for UI visibility
+        await asyncio.sleep(0.1)
+        
+        result = verify_single_rule(rule, extracted_data)
+        results.append(result)
+        
+    return {"rule_results": results}
 
 
 async def evaluation_node(state: ClaimsState):

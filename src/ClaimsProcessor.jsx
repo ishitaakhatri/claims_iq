@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignIn, SignUp, UserButton } from "@clerk/clerk-react"
+import { SignedIn, SignedOut, SignIn, SignUp, UserButton, useUser } from "@clerk/clerk-react"
 import AuthPage from "./AuthPage.jsx";
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -30,8 +30,8 @@ const NODE_MESSAGES = {
 
 
 // ─── LangGraph Backend API Call ──────────────────────────────────────────────
-async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog) {
-  console.log("🚀 [LangGraph Backend] Processing file:", fileName);
+async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog, userId) {
+  console.log("🚀 [LangGraph Backend] Processing file:", fileName, "User ID:", userId);
 
   try {
     const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
@@ -45,6 +45,7 @@ async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfi
         file_type: fileType,
         file_name: fileName,
         rule_config: ruleConfig,
+        user_id: userId,
       }),
     });
 
@@ -178,6 +179,7 @@ function RuleRow({ rule }) {
 
 
 export default function ClaimsProcessor() {
+  const { user } = useUser();
   const [stage, setStage] = useState("idle"); // idle | processing | done | error
   const [file, setFile] = useState(null);
   const [extracted, setExtracted] = useState(null);
@@ -240,7 +242,7 @@ export default function ClaimsProcessor() {
         });
       };
 
-      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog);
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, user?.id);
 
       if (!result) {
         throw new Error("No result received from processing engine.");

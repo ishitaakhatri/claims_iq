@@ -6,6 +6,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
+from .services.blob_storage import upload_to_blob
+from .services.database import save_claim_to_db
 from dotenv import load_dotenv
 import json
 
@@ -27,6 +29,7 @@ class ClaimRequest(BaseModel):
     file_type: str
     file_name: str
     rule_config: Optional[dict] = None
+    user_id: Optional[str] = None
 
 @app.post("/process-claim")
 async def process_claim(request: ClaimRequest):
@@ -76,10 +79,44 @@ async def process_claim(request: ClaimRequest):
             if state.get("error"):
                 yield f"data: {json.dumps({'error': state['error']})}\n\n"
             else:
+                extracted_data = state.get("extracted_data")
+                evaluation = state.get("evaluation")
+                blob_uri = None
+                claim_id = None
+
+                # Upload document to Azure Blob Storage
+                try:
+                    print(f"🚀 [Integration] Attempting blob upload for {request.file_name}...")
+                    blob_uri = upload_to_blob(request.file_data, request.file_name)
+                    print(f"✅ [Integration] Blob upload successful: {blob_uri}")
+                    yield f"data: {json.dumps({'node': 'blob_upload', 'status': 'completed'})}\n\n"
+                except Exception as e:
+                    print(f"⚠️ [Integration] Blob upload failed (non-fatal): {e}")
+
+                # Save claim record to PostgreSQL
+                try:
+                    print(f"🚀 [Integration] Attempting to save claim record to DB...")
+                    status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
+                    form_category = (extracted_data or {}).get("claimType", "Medical Claim")
+                    claim_id = save_claim_to_db(
+                        user_id=request.user_id,
+                        form_category=form_category,
+                        blob_uri=blob_uri or "",
+                        status=status,
+                        extracted_data=extracted_data or {},
+                        evaluation_results=evaluation or {},
+                    )
+                    print(f"✅ [Integration] DB save successful: {claim_id}")
+                    yield f"data: {json.dumps({'node': 'db_save', 'status': 'completed'})}\n\n"
+                except Exception as e:
+                    print(f"⚠️ [Integration] DB save failed (non-fatal): {e}")
+
                 final_payload = {
                     "final_result": {
-                        "extracted_data": state.get("extracted_data"),
-                        "evaluation": state.get("evaluation")
+                        "extracted_data": extracted_data,
+                        "evaluation": evaluation,
+                        "blob_uri": blob_uri,
+                        "claim_id": claim_id,
                     }
                 }
                 yield f"data: {json.dumps(final_payload)}\n\n"

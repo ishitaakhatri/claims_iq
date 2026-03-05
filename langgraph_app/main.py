@@ -7,11 +7,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from .services.blob_storage import upload_to_blob
-from .services.database import save_claim_to_db
+from .services.database import save_claim_to_db, sync_user_to_db
 from dotenv import load_dotenv
 import json
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = FastAPI(title="ClaimsIQ LangGraph API")
 
@@ -30,6 +30,23 @@ class ClaimRequest(BaseModel):
     file_name: str
     rule_config: Optional[dict] = None
     user_id: Optional[str] = None
+
+class UserSyncRequest(BaseModel):
+    auth_provider_id: str
+    email: str
+
+
+@app.post("/sync-user")
+async def sync_user(request: UserSyncRequest):
+    """
+    Sync Clerk user info to database.
+    """
+    try:
+        user_id = sync_user_to_db(request.auth_provider_id, request.email)
+        return {"status": "success", "user_id": user_id}
+    except Exception as e:
+        print(f"❌ [API] Sync Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-claim")
 async def process_claim(request: ClaimRequest):

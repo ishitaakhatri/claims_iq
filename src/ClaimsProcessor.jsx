@@ -377,12 +377,32 @@ export default function ClaimsProcessor() {
 
   const [authMode, setAuthMode] = useState("sign-in");
 
+
+  // Sync user info to DB after sign in
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const mode = params.get("mode");
-    if (mode === "sign-up") setAuthMode("sign-up");
-    else setAuthMode("sign-in");
-  }, []);
+    if (user) {
+      const syncUser = async () => {
+        try {
+          const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+          const res = await fetch(`${apiUrl}/sync-user`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              auth_provider_id: user.id,
+              email: user.primaryEmailAddress?.emailAddress || ""
+            })
+          });
+          const data = await res.json();
+          if (data.status === "success") {
+            console.log("✅ [User Sync] User successfully synced to DB:", data.user_id);
+          }
+        } catch (err) {
+          console.error("❌ [User Sync] Error syncing user:", err);
+        }
+      };
+      syncUser();
+    }
+  }, [user]);
 
   return (
     <>

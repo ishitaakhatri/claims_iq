@@ -1,5 +1,6 @@
 from .state import ClaimsState
 from ..tools.tools import call_azure_layout, call_openai_extraction
+from ..services.database import check_duplicate_claim
 import asyncio
 # ─── Business Rules Engine ────────────────────────────────────────────────────
 BUSINESS_RULES = [
@@ -94,8 +95,7 @@ BUSINESS_RULES = [
     }
 ]
 
-# Global variable to store the last processed claim data for duplicate check
-LAST_CLAIM_DATA = None
+# Duplicate check is now handled via database
 
 def update_rule_description(rule: dict) -> str:
     """
@@ -178,51 +178,44 @@ def extraction_node(state: ClaimsState):
     extracted = call_openai_extraction(state["ocr_content"], state["file_name"])
     if not extracted:
         return {"error": "Extraction failed (OpenAI)"}
-    return {"extracted_data": extracted, "rule_results": []} # Initialize rule_results
+    return {"extracted_data": extracted} # Don't reset rule_results - the operator.add reducer handles it
 
-async def rule_engine_node(state: ClaimsState):
+def create_rule_node(base_rule: dict):
     """
-    Consolidated Rule Engine Node.
-    Iterates through all business rules and evaluates them.
+    Factory function to create a node for a specific business rule.
     """
-    print("---RULE ENGINE NODE---")
-    if state.get("error"): return state
-    
-    results = []
-    extracted_data = state["extracted_data"].copy()
-    
-    # Pre-process Duplicate Check
-    current_claim_num = extracted_data.get("claimNumber")
-    is_duplicate = False
-    if LAST_CLAIM_DATA:
-        if current_claim_num and current_claim_num == LAST_CLAIM_DATA.get("claimNumber"):
-            is_duplicate = True
-    extracted_data["isDuplicate"] = is_duplicate
-
-    for base_rule in BUSINESS_RULES:
-        if not base_rule.get("is_active", True):
-            continue
-            
+    async def rule_node(state: ClaimsState):
+        rule_id = base_rule["id"]
+        print(f"---RULE NODE: {rule_id}---")
+        if state.get("error"): return state
+        
         rule = base_rule.copy()
-        rule_id = rule["id"]
+        extracted_data = state["extracted_data"].copy()
         
         # Merge runtime configuration if present
         config_override = (state.get("rule_config") or {}).get(rule_id, {})
         if not config_override.get("enabled", True):
-            results.append({**rule, "status": "SKIPPED", "passed": True})
-            continue
+            return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
             
         if "threshold" in config_override:
             rule["config"]["value"] = config_override["threshold"]
             rule["description"] = update_rule_description(rule)
 
+        # Handle Duplicate Check (BR006) specifically with Database
+        if rule_id == "BR006":
+            current_claim_num = extracted_data.get("claimNumber")
+            is_duplicate = check_duplicate_claim(current_claim_num) if current_claim_num else False
+            extracted_data["isDuplicate"] = is_duplicate
+
         # Artificial delay for UI visibility
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         
         result = verify_single_rule(rule, extracted_data)
-        results.append(result)
         
-    return {"rule_results": results}
+        # Return only the single result - operator.add reducer handles concatenation
+        return {"rule_results": [result]}
+
+    return rule_node
 
 
 async def evaluation_node(state: ClaimsState):
@@ -258,12 +251,6 @@ async def evaluation_node(state: ClaimsState):
         "escalationReasons": escalation_reasons,
         "escalateTo": escalate_to
     }
-    
-    # Store the current claim data for the next duplicate check
-    global LAST_CLAIM_DATA
-    LAST_CLAIM_DATA = state["extracted_data"]
-    print(f"DEBUG EVAL: Saved LAST_CLAIM_DATA with claimNumber: {LAST_CLAIM_DATA.get('claimNumber')}")
-
     
     return {
         "evaluation": evaluation,

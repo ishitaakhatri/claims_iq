@@ -3,8 +3,9 @@ from .state import ClaimsState
 from .nodes import (
     ocr_node, 
     extraction_node, 
-    rule_engine_node,
-    evaluation_node
+    create_rule_node,
+    evaluation_node,
+    BUSINESS_RULES
 )
 
 def create_graph():
@@ -17,8 +18,10 @@ def create_graph():
     workflow.add_node("ocr", ocr_node)
     workflow.add_node("extraction", extraction_node)
     
-    # Adding rule engine node
-    workflow.add_node("rule_engine", rule_engine_node)
+    # Adding rule nodes
+    for rule in BUSINESS_RULES:
+        node_id = rule["id"].lower()
+        workflow.add_node(node_id, create_rule_node(rule))
     
     workflow.add_node("evaluation", evaluation_node)
 
@@ -27,9 +30,13 @@ def create_graph():
     workflow.add_edge("ocr", "extraction")
     
     # Sequential Rule Engine
-    workflow.add_edge("extraction", "rule_engine")
-    workflow.add_edge("rule_engine", "evaluation")
-    
+    last_node = "extraction"
+    for rule in BUSINESS_RULES:
+        node_id = rule["id"].lower()
+        workflow.add_edge(last_node, node_id)
+        last_node = node_id
+        
+    workflow.add_edge(last_node, "evaluation")
     workflow.add_edge("evaluation", END)
 
     return workflow.compile()

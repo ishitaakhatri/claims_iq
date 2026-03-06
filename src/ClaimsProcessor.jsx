@@ -183,6 +183,7 @@ export default function ClaimsProcessor() {
   const { user } = useUser();
   const [view, setView] = useState('dashboard'); // dashboard | rules
   const [stage, setStage] = useState("idle"); // idle | processing | done | error
+  const [dbUserId, setDbUserId] = useState(null);
   const [file, setFile] = useState(null);
   const [extracted, setExtracted] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
@@ -244,7 +245,7 @@ export default function ClaimsProcessor() {
         });
       };
 
-      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, user?.id);
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, dbUserId);
 
       if (!result) {
         throw new Error("No result received from processing engine.");
@@ -378,13 +379,15 @@ export default function ClaimsProcessor() {
   const [authMode, setAuthMode] = useState("sign-in");
 
 
-  // Sync user info to DB after sign in
+  // Sync user info and fetch history after sign in
   useEffect(() => {
     if (user) {
-      const syncUser = async () => {
+      const syncAndFetch = async () => {
+        const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+
         try {
-          const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
-          const res = await fetch(`${apiUrl}/sync-user`, {
+          // 1. Sync User
+          const syncRes = await fetch(`${apiUrl}/sync-user`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -392,15 +395,24 @@ export default function ClaimsProcessor() {
               email: user.primaryEmailAddress?.emailAddress || ""
             })
           });
-          const data = await res.json();
-          if (data.status === "success") {
-            console.log("✅ [User Sync] User successfully synced to DB:", data.user_id);
+          const syncData = await syncRes.json();
+          if (syncData.status === "success") {
+            setDbUserId(syncData.user_id);
+            console.log("✅ [User Sync] User successfully synced to DB:", syncData.user_id);
+
+            // 2. Fetch History using the internal DB user_id
+            const historyRes = await fetch(`${apiUrl}/claims-history/${syncData.user_id}`);
+            const historyData = await historyRes.json();
+            if (historyData.status === "success" && historyData.history) {
+              console.log(`✅ [History] Fetched ${historyData.history.length} claims from DB`);
+              setClaimsLog(historyData.history);
+            }
           }
         } catch (err) {
-          console.error("❌ [User Sync] Error syncing user:", err);
+          console.error("❌ [User Sync/History] Error:", err);
         }
       };
-      syncUser();
+      syncAndFetch();
     }
   }, [user]);
 

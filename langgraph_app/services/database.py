@@ -162,3 +162,101 @@ def check_duplicate_claim(claim_number: str) -> bool:
         if conn:
             conn.close()
 
+def get_claims_history(user_id: str) -> list:
+    """
+    Fetches the last 20 claims for a specific user from the claims_history table.
+    Matches on:
+      1. claims_history.user_id = internal DB uuid
+      2. claims_history.user_id = auth_provider_id (Clerk ID) from users table
+    """
+    if not user_id:
+        return []
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # First, get the auth_provider_id for this user so we can match old claims
+        cursor.execute("SELECT auth_provider_id FROM users WHERE id = %s", (user_id,))
+        user_row = cursor.fetchone()
+        auth_provider_id = user_row[0] if user_row else None
+        
+        # Query for last 20 claims, matching either the internal UUID or the Clerk ID
+        if auth_provider_id:
+            query = """
+                SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status
+                FROM claims_history 
+                WHERE user_id = %s OR user_id = %s
+                ORDER BY created_at DESC 
+                LIMIT 20
+            """
+            cursor.execute(query, (user_id, auth_provider_id))
+        else:
+            query = """
+                SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status
+                FROM claims_history 
+                WHERE user_id = %s
+                ORDER BY created_at DESC 
+                LIMIT 20
+            """
+            cursor.execute(query, (user_id,))
+        
+        rows = cursor.fetchall()
+        cursor.close()
+        
+        history = []
+        for row in rows:
+            extracted = row[1] if isinstance(row[1], dict) else json.loads(row[1]) if row[1] else {}
+            evaluation = row[2] if isinstance(row[2], dict) else json.loads(row[2]) if row[2] else {}
+            
+            history.append({
+                "id": row[0],
+                "claim": extracted.get("claimNumber", "N/A"),
+                "claimant": extracted.get("claimantName", "Unknown"),
+                "amount": extracted.get("claimAmount"),
+                "routing": evaluation.get("routing", row[6]),
+                "time": row[3].strftime("%I:%M:%S %p") if row[3] else "N/A",
+                "confidence": evaluation.get("confidence", 0),
+                "extracted": extracted,
+                "evaluation": evaluation,
+                "blob_uri": row[4],
+                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf"
+            })
+            
+        print(f"✅ [Database] Fetched {len(history)} claims for user: {user_id}")
+        return history
+    except Exception as e:
+        print(f"❌ [Database] Error fetching claims history: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def backfill_orphaned_claims(user_id: str) -> int:
+    """
+    Assigns the given user_id to all claims_history rows where user_id IS NULL.
+    Returns the number of updated rows.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE claims_history SET user_id = %s WHERE user_id IS NULL",
+            (user_id,)
+        )
+        count = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        print(f"✅ [Database] Backfilled {count} orphaned claims with user_id: {user_id}")
+        return count
+    except Exception as e:
+        print(f"❌ [Database] Error backfilling orphaned claims: {e}")
+        if conn:
+            conn.rollback()
+        return 0
+    finally:
+        if conn:
+            conn.close()

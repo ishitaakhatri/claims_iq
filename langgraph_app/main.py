@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from .services.blob_storage import upload_to_blob
-from .services.database import save_claim_to_db, sync_user_to_db
+from .services.database import save_claim_to_db, sync_user_to_db, get_claims_history, backfill_orphaned_claims
 from dotenv import load_dotenv
 import json
 
@@ -43,9 +43,23 @@ async def sync_user(request: UserSyncRequest):
     """
     try:
         user_id = sync_user_to_db(request.auth_provider_id, request.email)
+        # Automatically assign any claims with NULL user_id to this user (for simple single-user setup or recovery)
+        backfill_orphaned_claims(user_id)
         return {"status": "success", "user_id": user_id}
     except Exception as e:
         print(f"❌ [API] Sync Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/claims-history/{user_id}")
+async def claims_history(user_id: str):
+    """
+    Fetch claims history for a specific user.
+    """
+    try:
+        history = get_claims_history(user_id)
+        return {"status": "success", "history": history}
+    except Exception as e:
+        print(f"❌ [API] History Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-claim")

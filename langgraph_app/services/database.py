@@ -188,36 +188,21 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
             query = """
                 SELECT c.id, c.extracted_data, c.evaluation_results, c.created_at, c.blob_uri, c.form_category, c.status, u.email
                 FROM claims_history c
-                LEFT JOIN users u ON c.user_id = u.id OR c.user_id = u.auth_provider_id
+                LEFT JOIN users u ON c.user_id = u.id
                 ORDER BY c.created_at DESC 
                 LIMIT 50
             """
             cursor.execute(query)
         else:
-            # First, get the auth_provider_id for this user so we can match old claims
-            cursor.execute("SELECT auth_provider_id FROM users WHERE id = %s", (user_id,))
-            user_row = cursor.fetchone()
-            auth_provider_id = user_row[0] if user_row else None
-            
-            # Query for last 20 claims, matching either the internal UUID or the Clerk ID
-            if auth_provider_id:
-                query = """
-                    SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status, %s as email
-                    FROM claims_history 
-                    WHERE user_id = %s OR user_id = %s
-                    ORDER BY created_at DESC 
-                    LIMIT 20
-                """
-                cursor.execute(query, ('', user_id, auth_provider_id))
-            else:
-                query = """
-                    SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status, %s as email
-                    FROM claims_history 
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC 
-                    LIMIT 20
-                """
-                cursor.execute(query, ('', user_id,))
+            # Query for last 20 claims, matching the internal UUID
+            query = """
+                SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status, %s as email
+                FROM claims_history 
+                WHERE user_id = %s
+                ORDER BY created_at DESC 
+                LIMIT 20
+            """
+            cursor.execute(query, ('', user_id,))
         
         
         rows = cursor.fetchall()

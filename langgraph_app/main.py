@@ -44,7 +44,7 @@ async def claims_history(clerk_id: str = Depends(get_current_user)):
         history = get_claims_history(user_info.get("id"), is_admin)
         return {"status": "success", "history": history}
     except Exception as e:
-        print(f"❌ [API] History Error: {e}")
+        print(f"[API] History Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-claim")
@@ -105,16 +105,16 @@ async def process_claim(request: ClaimRequest, clerk_id: str = Depends(get_curre
 
                 # Upload document to Azure Blob Storage
                 try:
-                    print(f"🚀 [Integration] Attempting blob upload for {request.file_name}...")
+                    print(f"[Integration] Attempting blob upload for {request.file_name}...")
                     blob_uri = upload_to_blob(request.file_data, request.file_name)
-                    print(f"✅ [Integration] Blob upload successful: {blob_uri}")
+                    print(f"[Integration] Blob upload successful: {blob_uri}")
                     yield f"data: {json.dumps({'node': 'blob_upload', 'status': 'completed'})}\n\n"
                 except Exception as e:
-                    print(f"⚠️ [Integration] Blob upload failed (non-fatal): {e}")
+                    print(f"[Integration] Blob upload failed (non-fatal): {e}")
 
                 # Save claim record to PostgreSQL
                 try:
-                    print(f"🚀 [Integration] Attempting to save claim record to DB...")
+                    print(f"[Integration] Attempting to save claim record to DB...")
                     status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
                     form_category = (extracted_data or {}).get("claimType", "Medical Claim")
                     claim_id = save_claim_to_db(
@@ -125,10 +125,10 @@ async def process_claim(request: ClaimRequest, clerk_id: str = Depends(get_curre
                         extracted_data=extracted_data or {},
                         evaluation_results=evaluation or {},
                     )
-                    print(f"✅ [Integration] DB save successful: {claim_id}")
+                    print(f"[Integration] DB save successful: {claim_id}")
                     yield f"data: {json.dumps({'node': 'db_save', 'status': 'completed'})}\n\n"
                 except Exception as e:
-                    print(f"⚠️ [Integration] DB save failed (non-fatal): {e}")
+                    print(f"[Integration] DB save failed (non-fatal): {e}")
 
                 final_payload = {
                     "final_result": {
@@ -141,7 +141,7 @@ async def process_claim(request: ClaimRequest, clerk_id: str = Depends(get_curre
                 yield f"data: {json.dumps(final_payload)}\n\n"
                 
         except Exception as e:
-            print(f"❌ Graph Execution Error: {str(e)}")
+            print(f"Graph Execution Error: {str(e)}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

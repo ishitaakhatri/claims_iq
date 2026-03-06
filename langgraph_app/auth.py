@@ -2,11 +2,11 @@ import os
 from fastapi import Request, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from clerk_backend_api import Clerk
-from clerk_backend_api.models import AuthenticateRequestOptions
+from clerk_backend_api.security.types import AuthenticateRequestOptions
 
 clerk_secret = os.getenv("CLERK_SECRET_KEY", "")
 if not clerk_secret:
-    print("⚠️ CLERK_SECRET_KEY is missing! Auth will fail.")
+    print("CLERK_SECRET_KEY is missing! Auth will fail.")
 
 clerk = Clerk(bearer_auth=clerk_secret)
 security = HTTPBearer()
@@ -39,5 +39,5 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [Auth] Error verifying token: {e}")
+        print(f"[Auth] Error verifying token: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")

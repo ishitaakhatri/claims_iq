@@ -67,10 +67,10 @@ def save_claim_to_db(
         )
         conn.commit()
         cursor.close()
-        print(f"✅ [Database] Claim saved: {claim_id}")
+        print(f"[Database] Claim saved: {claim_id}")
         return claim_id
     except Exception as e:
-        print(f"❌ [Database] Error saving claim: {e}")
+        print(f"[Database] Error saving claim: {e}")
         if conn:
             conn.rollback()
         raise
@@ -105,10 +105,10 @@ def sync_user_to_db(auth_provider_id: str, email: str) -> str:
             
         conn.commit()
         cursor.close()
-        print(f"✅ [Database] User synced (atomic): {auth_provider_id} -> {user_id}")
+        print(f"[Database] User synced (atomic): {auth_provider_id} -> {user_id}")
         return user_id
     except Exception as e:
-        print(f"❌ [Database] Error syncing user: {e}")
+        print(f"[Database] Error syncing user: {e}")
         if conn:
             conn.rollback()
         raise
@@ -138,7 +138,7 @@ def get_user_by_clerk_id(clerk_id: str, email: str = "") -> dict:
             "role": row[1] if row else None
         }
     except Exception as e:
-        print(f"❌ [Database] Error fetching user by clerk ID: {e}")
+        print(f"[Database] Error fetching user by clerk ID: {e}")
         return {"id": internal_id, "role": None}
     finally:
         if conn:
@@ -171,7 +171,7 @@ def check_duplicate_claim(claim_number: str) -> bool:
         
         return is_duplicate
     except Exception as e:
-        print(f"❌ [Database] Error checking duplicate claim: {e}")
+        print(f"[Database] Error checking duplicate claim: {e}")
         return False
     finally:
         if conn:
@@ -189,7 +189,7 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
         cursor = conn.cursor()
         
         if is_admin:
-            print("🛡️ [Database] Fetching claims history as ADMIN (showing all users)")
+            print("[Database] Fetching claims history as ADMIN (showing all users)")
             # Join with users table to get the submitter's email
             query = """
                 SELECT c.id, c.extracted_data, c.evaluation_results, c.created_at, c.blob_uri, c.form_category, c.status, u.email
@@ -249,10 +249,10 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
                 "submitterEmail": row[7] if row[7] else ""
             })
             
-        print(f"✅ [Database] Fetched {len(history)} claims for user: {user_id}")
+        print(f"[Database] Fetched {len(history)} claims for user: {user_id}")
         return history
     except Exception as e:
-        print(f"❌ [Database] Error fetching claims history: {e}")
+        print(f"[Database] Error fetching claims history: {e}")
         return []
     finally:
         if conn:
@@ -275,10 +275,10 @@ def backfill_orphaned_claims(user_id: str) -> int:
         count = cursor.rowcount
         conn.commit()
         cursor.close()
-        print(f"✅ [Database] Backfilled {count} orphaned claims with user_id: {user_id}")
+        print(f"[Database] Backfilled {count} orphaned claims with user_id: {user_id}")
         return count
     except Exception as e:
-        print(f"❌ [Database] Error backfilling orphaned claims: {e}")
+        print(f"[Database] Error backfilling orphaned claims: {e}")
         if conn:
             conn.rollback()
         return 0

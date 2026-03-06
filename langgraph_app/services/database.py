@@ -80,10 +80,7 @@ def save_claim_to_db(
 
 def sync_user_to_db(auth_provider_id: str, email: str) -> str:
     """
-    Syncs a Clerk user into the 'users' table.
-    Uses auth_provider_id as the lookup key. 
-    If not exists, inserts with a new UUID.
-    If exists, updates the email (or other fields in the future).
+    Syncs a Clerk user into the 'users' table atomically to prevent race conditions.
     Returns the user's internal UUID.
     """
     conn = None
@@ -91,40 +88,58 @@ def sync_user_to_db(auth_provider_id: str, email: str) -> str:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if user exists by auth_provider_id
-        cursor.execute(
-            "SELECT id FROM users WHERE auth_provider_id = %s",
-            (auth_provider_id,)
-        )
+        user_id = str(uuid.uuid4())
+        
+        query = """
+            INSERT INTO users (id, auth_provider_id, email, role)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (auth_provider_id) 
+            DO UPDATE SET email = EXCLUDED.email
+            RETURNING id
+        """
+        cursor.execute(query, (user_id, auth_provider_id, email, None))
         row = cursor.fetchone()
         
         if row:
             user_id = row[0]
-            # Update existing user (e.g. email)
-            cursor.execute(
-                "UPDATE users SET email = %s WHERE auth_provider_id = %s",
-                (email, auth_provider_id)
-            )
-        else:
-            # Create new user with a fresh UUID
-            user_id = str(uuid.uuid4())
-            cursor.execute(
-                """
-                INSERT INTO users (id, auth_provider_id, email, role)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (user_id, auth_provider_id, email, None)
-            )
             
         conn.commit()
         cursor.close()
-        print(f"✅ [Database] User synced: {auth_provider_id} -> {user_id}")
+        print(f"✅ [Database] User synced (atomic): {auth_provider_id} -> {user_id}")
         return user_id
     except Exception as e:
         print(f"❌ [Database] Error syncing user: {e}")
         if conn:
             conn.rollback()
         raise
+    finally:
+        if conn:
+            conn.close()
+
+def get_user_by_clerk_id(clerk_id: str, email: str = "") -> dict:
+    """
+    Looks up a user's internal UUID and role by their Clerk ID. 
+    If they don't exist, it atomically creates them first.
+    Returns a dictionary: {"id": <internal uuid>, "role": <role>}
+    """
+    # Force an atomic upsert to ensure the user exists and we have the latest email
+    internal_id = sync_user_to_db(clerk_id, email)
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, role FROM users WHERE id = %s", (internal_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        
+        return {
+            "id": row[0] if row else internal_id,
+            "role": row[1] if row else None
+        }
+    except Exception as e:
+        print(f"❌ [Database] Error fetching user by clerk ID: {e}")
+        return {"id": internal_id, "role": None}
     finally:
         if conn:
             conn.close()
@@ -162,45 +177,54 @@ def check_duplicate_claim(claim_number: str) -> bool:
         if conn:
             conn.close()
 
-def get_claims_history(user_id: str) -> list:
+def get_claims_history(user_id: str, is_admin: bool = False) -> list:
     """
-    Fetches the last 20 claims for a specific user from the claims_history table.
-    Matches on:
-      1. claims_history.user_id = internal DB uuid
-      2. claims_history.user_id = auth_provider_id (Clerk ID) from users table
+    Fetches the claims history.
+    If is_admin is True, returns up to 50 claims across ALL users, including their email.
+    Otherwise, returns the last 20 claims for the specific user_id.
     """
-    if not user_id:
-        return []
-
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # First, get the auth_provider_id for this user so we can match old claims
-        cursor.execute("SELECT auth_provider_id FROM users WHERE id = %s", (user_id,))
-        user_row = cursor.fetchone()
-        auth_provider_id = user_row[0] if user_row else None
-        
-        # Query for last 20 claims, matching either the internal UUID or the Clerk ID
-        if auth_provider_id:
+        if is_admin:
+            print("🛡️ [Database] Fetching claims history as ADMIN (showing all users)")
+            # Join with users table to get the submitter's email
             query = """
-                SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status
-                FROM claims_history 
-                WHERE user_id = %s OR user_id = %s
-                ORDER BY created_at DESC 
-                LIMIT 20
+                SELECT c.id, c.extracted_data, c.evaluation_results, c.created_at, c.blob_uri, c.form_category, c.status, u.email
+                FROM claims_history c
+                LEFT JOIN users u ON c.user_id = u.id OR c.user_id = u.auth_provider_id
+                ORDER BY c.created_at DESC 
+                LIMIT 50
             """
-            cursor.execute(query, (user_id, auth_provider_id))
+            cursor.execute(query)
         else:
-            query = """
-                SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status
-                FROM claims_history 
-                WHERE user_id = %s
-                ORDER BY created_at DESC 
-                LIMIT 20
-            """
-            cursor.execute(query, (user_id,))
+            # First, get the auth_provider_id for this user so we can match old claims
+            cursor.execute("SELECT auth_provider_id FROM users WHERE id = %s", (user_id,))
+            user_row = cursor.fetchone()
+            auth_provider_id = user_row[0] if user_row else None
+            
+            # Query for last 20 claims, matching either the internal UUID or the Clerk ID
+            if auth_provider_id:
+                query = """
+                    SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status, %s as email
+                    FROM claims_history 
+                    WHERE user_id = %s OR user_id = %s
+                    ORDER BY created_at DESC 
+                    LIMIT 20
+                """
+                cursor.execute(query, ('', user_id, auth_provider_id))
+            else:
+                query = """
+                    SELECT id, extracted_data, evaluation_results, created_at, blob_uri, form_category, status, %s as email
+                    FROM claims_history 
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC 
+                    LIMIT 20
+                """
+                cursor.execute(query, ('', user_id,))
+        
         
         rows = cursor.fetchall()
         cursor.close()
@@ -221,7 +245,8 @@ def get_claims_history(user_id: str) -> list:
                 "extracted": extracted,
                 "evaluation": evaluation,
                 "blob_uri": row[4],
-                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf"
+                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf",
+                "submitterEmail": row[7] if row[7] else ""
             })
             
         print(f"✅ [Database] Fetched {len(history)} claims for user: {user_id}")

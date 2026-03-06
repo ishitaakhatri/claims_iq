@@ -1,13 +1,14 @@
 import os
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from .services.blob_storage import upload_to_blob
-from .services.database import save_claim_to_db, sync_user_to_db, get_claims_history, backfill_orphaned_claims
+from .services.database import save_claim_to_db, get_claims_history, backfill_orphaned_claims, get_user_by_clerk_id
+from .auth import get_current_user
 from dotenv import load_dotenv
 import json
 
@@ -29,44 +30,31 @@ class ClaimRequest(BaseModel):
     file_type: str
     file_name: str
     rule_config: Optional[dict] = None
-    user_id: Optional[str] = None
 
-class UserSyncRequest(BaseModel):
-    auth_provider_id: str
-    email: str
-
-
-@app.post("/sync-user")
-async def sync_user(request: UserSyncRequest):
+@app.get("/claims-history")
+async def claims_history(clerk_id: str = Depends(get_current_user)):
     """
-    Sync Clerk user info to database.
+    Fetch claims history for the authenticated user securely.
+    Admins can see all history.
     """
     try:
-        user_id = sync_user_to_db(request.auth_provider_id, request.email)
-        # Automatically assign any claims with NULL user_id to this user (for simple single-user setup or recovery)
-        backfill_orphaned_claims(user_id)
-        return {"status": "success", "user_id": user_id}
-    except Exception as e:
-        print(f"❌ [API] Sync Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/claims-history/{user_id}")
-async def claims_history(user_id: str):
-    """
-    Fetch claims history for a specific user.
-    """
-    try:
-        history = get_claims_history(user_id)
+        user_info = get_user_by_clerk_id(clerk_id)
+        is_admin = (user_info.get("role") == "admin")
+        
+        history = get_claims_history(user_info.get("id"), is_admin)
         return {"status": "success", "history": history}
     except Exception as e:
         print(f"❌ [API] History Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-claim")
-async def process_claim(request: ClaimRequest):
+async def process_claim(request: ClaimRequest, clerk_id: str = Depends(get_current_user)):
     """
     Endpoint to process a claim document using LangGraph with real-time streaming updates.
     """
+    # Securely resolve internal UUID before processing
+    user_info = get_user_by_clerk_id(clerk_id)
+    internal_user_id = user_info.get("id")
     initial_state = {
         "file_data": request.file_data,
         "file_type": request.file_type,
@@ -130,7 +118,7 @@ async def process_claim(request: ClaimRequest):
                     status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
                     form_category = (extracted_data or {}).get("claimType", "Medical Claim")
                     claim_id = save_claim_to_db(
-                        user_id=request.user_id,
+                        user_id=internal_user_id,
                         form_category=form_category,
                         blob_uri=blob_uri or "",
                         status=status,

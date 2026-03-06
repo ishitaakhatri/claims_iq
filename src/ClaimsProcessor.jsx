@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignIn, SignUp, UserButton, useUser } from "@clerk/clerk-react"
+import { SignedIn, SignedOut, SignIn, SignUp, UserButton, useAuth } from "@clerk/clerk-react"
 import AuthPage from "./AuthPage.jsx";
 import RulesManagement from "./RulesManagement.jsx";
 
@@ -31,8 +31,8 @@ const NODE_MESSAGES = {
 
 
 // ─── LangGraph Backend API Call ──────────────────────────────────────────────
-async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog, userId) {
-  console.log("🚀 [LangGraph Backend] Processing file:", fileName, "User ID:", userId);
+async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog, token) {
+  console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
   try {
     const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
@@ -40,13 +40,13 @@ async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfi
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
       },
       body: JSON.stringify({
         file_data: fileData,
         file_type: fileType,
         file_name: fileName,
-        rule_config: ruleConfig,
-        user_id: userId,
+        rule_config: ruleConfig
       }),
     });
 
@@ -180,10 +180,9 @@ function RuleRow({ rule }) {
 
 
 export default function ClaimsProcessor() {
-  const { user } = useUser();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [view, setView] = useState('dashboard'); // dashboard | rules
   const [stage, setStage] = useState("idle"); // idle | processing | done | error
-  const [dbUserId, setDbUserId] = useState(null);
   const [file, setFile] = useState(null);
   const [extracted, setExtracted] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
@@ -245,7 +244,8 @@ export default function ClaimsProcessor() {
         });
       };
 
-      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, dbUserId);
+      const token = await getToken();
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, token);
 
       if (!result) {
         throw new Error("No result received from processing engine.");
@@ -379,42 +379,31 @@ export default function ClaimsProcessor() {
   const [authMode, setAuthMode] = useState("sign-in");
 
 
-  // Sync user info and fetch history after sign in
+  // Fetch history after sign in
   useEffect(() => {
-    if (user) {
-      const syncAndFetch = async () => {
+    if (isLoaded && isSignedIn) {
+      const fetchHistory = async () => {
         const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
 
         try {
-          // 1. Sync User
-          const syncRes = await fetch(`${apiUrl}/sync-user`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              auth_provider_id: user.id,
-              email: user.primaryEmailAddress?.emailAddress || ""
-            })
-          });
-          const syncData = await syncRes.json();
-          if (syncData.status === "success") {
-            setDbUserId(syncData.user_id);
-            console.log("✅ [User Sync] User successfully synced to DB:", syncData.user_id);
-
-            // 2. Fetch History using the internal DB user_id
-            const historyRes = await fetch(`${apiUrl}/claims-history/${syncData.user_id}`);
-            const historyData = await historyRes.json();
-            if (historyData.status === "success" && historyData.history) {
-              console.log(`✅ [History] Fetched ${historyData.history.length} claims from DB`);
-              setClaimsLog(historyData.history);
+          const token = await getToken();
+          const historyRes = await fetch(`${apiUrl}/claims-history`, {
+            headers: {
+              "Authorization": `Bearer ${token}`
             }
+          });
+          const historyData = await historyRes.json();
+          if (historyData.status === "success" && historyData.history) {
+            console.log(`✅ [History] Fetched ${historyData.history.length} claims from DB`);
+            setClaimsLog(historyData.history);
           }
         } catch (err) {
-          console.error("❌ [User Sync/History] Error:", err);
+          console.error("❌ [History] Error:", err);
         }
       };
-      syncAndFetch();
+      fetchHistory();
     }
-  }, [user]);
+  }, [isLoaded, isSignedIn, getToken]);
 
   return (
     <>
@@ -1312,6 +1301,11 @@ export default function ClaimsProcessor() {
                           <div style={{ color: colors.muted, fontSize: 10 }}>
                             {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
                           </div>
+                          {c.submitterEmail && (
+                            <div style={{ color: colors.accent, fontSize: 10, marginTop: 4, fontFamily: "IBM Plex Mono", fontWeight: 600 }}>
+                              Submitted by: {c.submitterEmail}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1358,6 +1352,11 @@ export default function ClaimsProcessor() {
                   <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
                     Claim #{selectedLog.claim} · {selectedLog.time}
                   </div>
+                  {selectedLog.submitterEmail && (
+                      <div style={{ fontSize: 11, color: colors.accent, marginTop: 6, fontFamily: "IBM Plex Mono", fontWeight: 700 }}>
+                        <span style={{opacity: 0.8}}>SUBMITTER:</span> {selectedLog.submitterEmail}
+                      </div>
+                  )}
                 </div>
                 <button onClick={() => setSelectedLog(null)} style={{
                   width: 40, height: 40, borderRadius: "50%",

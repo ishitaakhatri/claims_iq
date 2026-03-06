@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from .services.blob_storage import upload_to_blob
-from .services.database import save_claim_to_db, get_claims_history, backfill_orphaned_claims, get_user_by_clerk_id
+from .services.database import save_claim_to_db, get_claims_history, backfill_orphaned_claims
 from .auth import get_current_user
 from dotenv import load_dotenv
 import json
@@ -32,13 +32,12 @@ class ClaimRequest(BaseModel):
     rule_config: Optional[dict] = None
 
 @app.get("/claims-history")
-async def claims_history(clerk_id: str = Depends(get_current_user)):
+async def claims_history(user_info: dict = Depends(get_current_user)):
     """
     Fetch claims history for the authenticated user securely.
     Admins can see all history.
     """
     try:
-        user_info = get_user_by_clerk_id(clerk_id)
         is_admin = (user_info.get("role") == "admin")
         
         history = get_claims_history(user_info.get("id"), is_admin)
@@ -48,12 +47,11 @@ async def claims_history(clerk_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-claim")
-async def process_claim(request: ClaimRequest, clerk_id: str = Depends(get_current_user)):
+async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_current_user)):
     """
     Endpoint to process a claim document using LangGraph with real-time streaming updates.
     """
-    # Securely resolve internal UUID before processing
-    user_info = get_user_by_clerk_id(clerk_id)
+    # Using internal UUID resolved securely by token threadpool
     internal_user_id = user_info.get("id")
     initial_state = {
         "file_data": request.file_data,

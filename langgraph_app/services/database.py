@@ -1,7 +1,7 @@
 import os
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import psycopg2
 from dotenv import load_dotenv
 
@@ -19,7 +19,7 @@ def get_db_connection():
     password = os.getenv("DB_PASSWORD", "").strip()
     sslmode = os.getenv("DB_SSLMODE", "require").strip()
     
-    print(f"🔍 [Database] Connecting to {host} as {user}...")
+    print(f"[Database] Connecting to {host} as {user}...")
     return psycopg2.connect(
         host=host,
         port=port,
@@ -62,7 +62,7 @@ def save_claim_to_db(
                 status,
                 json.dumps(extracted_data),
                 json.dumps(evaluation_results),
-                datetime.utcnow(),
+                datetime.now(timezone.utc),
             ),
         )
         conn.commit()
@@ -78,35 +78,44 @@ def save_claim_to_db(
         if conn:
             conn.close()
 
-def sync_user_to_db(auth_provider_id: str, email: str) -> str:
+def sync_user_to_db(auth_provider_id: str, email: str = "") -> dict:
     """
     Syncs a Clerk user into the 'users' table atomically to prevent race conditions.
-    Returns the user's internal UUID.
+    Returns a dict containing the user's internal 'id' and 'role'.
     """
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        user_id = str(uuid.uuid4())
+        new_user_id = str(uuid.uuid4())
         
+        # Use COALESCE(NULLIF) to prevent overwriting existing email with empty strings
         query = """
             INSERT INTO users (id, auth_provider_id, email, role)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (auth_provider_id) 
-            DO UPDATE SET email = EXCLUDED.email
-            RETURNING id
+            DO UPDATE SET email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email)
+            RETURNING id, role
         """
-        cursor.execute(query, (user_id, auth_provider_id, email, None))
+        cursor.execute(query, (new_user_id, auth_provider_id, email, None))
         row = cursor.fetchone()
         
         if row:
             user_id = row[0]
+            role = row[1]
+        else:
+            # Fallback if returning fails for some edge case
+            user_id = new_user_id
+            role = None
             
         conn.commit()
         cursor.close()
-        print(f"[Database] User synced (atomic): {auth_provider_id} -> {user_id}")
-        return user_id
+        
+        # Resolve legacy orphans (syncing old Clerk-ID-based claims to this internal UUID)
+        backfill_orphaned_claims(user_id)
+        
+        return {"id": user_id, "role": role}
     except Exception as e:
         print(f"[Database] Error syncing user: {e}")
         if conn:
@@ -119,30 +128,15 @@ def sync_user_to_db(auth_provider_id: str, email: str) -> str:
 def get_user_by_clerk_id(clerk_id: str, email: str = "") -> dict:
     """
     Looks up a user's internal UUID and role by their Clerk ID. 
-    If they don't exist, it atomically creates them first.
+    If they don't exist, it atomically creates them in a single query.
     Returns a dictionary: {"id": <internal uuid>, "role": <role>}
     """
-    # Force an atomic upsert to ensure the user exists and we have the latest email
-    internal_id = sync_user_to_db(clerk_id, email)
-    
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, role FROM users WHERE id = %s", (internal_id,))
-        row = cursor.fetchone()
-        cursor.close()
-        
-        return {
-            "id": row[0] if row else internal_id,
-            "role": row[1] if row else None
-        }
+        return sync_user_to_db(clerk_id, email)
     except Exception as e:
         print(f"[Database] Error fetching user by clerk ID: {e}")
-        return {"id": internal_id, "role": None}
-    finally:
-        if conn:
-            conn.close()
+        # Return fallback missing values to not break frontend explicitly immediately
+        return {"id": None, "role": None}
 
 def check_duplicate_claim(claim_number: str) -> bool:
     """
@@ -150,7 +144,7 @@ def check_duplicate_claim(claim_number: str) -> bool:
     Queries the extracted_data column (stored as JSON string).
     """
     if not claim_number:
-        print("🔍 [Database] Duplicate check skipped: no claim number provided")
+        print("[Database] Duplicate check skipped: no claim number provided")
         return False
         
     conn = None
@@ -160,14 +154,14 @@ def check_duplicate_claim(claim_number: str) -> bool:
         
         # Use explicit cast to jsonb for reliable querying on varchar column
         query = "SELECT COUNT(*) FROM claims_history WHERE (extracted_data::jsonb)->>'claimNumber' = %s"
-        print(f"🔍 [Database] Checking duplicate for claim number: '{claim_number}'")
+        print(f"[Database] Checking duplicate for claim number: '{claim_number}'")
         cursor.execute(query, (claim_number,))
         
         count = cursor.fetchone()[0]
         cursor.close()
         
         is_duplicate = count > 0
-        print(f"🔍 [Database] Duplicate check result: {'DUPLICATE FOUND' if is_duplicate else 'Unique'} (found {count} matches)")
+        print(f"[Database] Duplicate check result: {'DUPLICATE FOUND' if is_duplicate else 'Unique'} (found {count} matches)")
         
         return is_duplicate
     except Exception as e:

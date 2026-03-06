@@ -17,7 +17,7 @@ def call_azure_layout(file_data_b64: str, file_type: str):
     api_key = os.getenv("VITE_AZURE_DOC_INTELLIGENCE_KEY")
     
     if not endpoint or not api_key:
-        print("⚠️ Azure credentials not found")
+        print("[Warning] Azure credentials not found")
         return None
 
     try:
@@ -38,7 +38,7 @@ def call_azure_layout(file_data_b64: str, file_type: str):
         # Returning full content
         return result.content
     except Exception as e:
-        print(f"❌ Azure Error: {str(e)}")
+        print(f"[Error] Azure Error: {str(e)}")
         return None
 
 def call_openai_extraction(text: str, file_name: str):
@@ -47,7 +47,7 @@ def call_openai_extraction(text: str, file_name: str):
     """
     api_key = os.getenv("VITE_OPENAI_API_KEY")
     if not api_key:
-        print("⚠️ OpenAI API key not found")
+        print("[Warning] OpenAI API key not found")
         return None
 
     client = OpenAI(api_key=api_key)
@@ -110,5 +110,5 @@ CRITICAL INSTRUCTIONS FOR additionalFields:
         
         return json.loads(response.choices[0].message.content)
     except Exception as e:
-        print(f"❌ OpenAI Error: {str(e)}")
+        print(f"[Error] OpenAI Error: {str(e)}")
         return None

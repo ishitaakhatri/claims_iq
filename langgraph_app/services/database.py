@@ -214,7 +214,7 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
             evaluation = row[2] if isinstance(row[2], dict) else json.loads(row[2]) if row[2] else {}
             
             history.append({
-                "id": row[0],
+                "id": str(row[0]),
                 "claim": extracted.get("claimNumber", "N/A"),
                 "claimant": extracted.get("claimantName", "Unknown"),
                 "amount": extracted.get("claimAmount"),

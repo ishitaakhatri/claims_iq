@@ -90,15 +90,16 @@ def sync_user_to_db(auth_provider_id: str, email: str = "") -> dict:
         
         new_user_id = str(uuid.uuid4())
         
-        # Use COALESCE(NULLIF) to prevent overwriting existing email with empty strings
+        # Use COALESCE to prevent overwriting existing email with dummy email
         query = """
             INSERT INTO users (id, auth_provider_id, email, role)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (auth_provider_id) 
-            DO UPDATE SET email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email)
+            DO UPDATE SET email = COALESCE(EXCLUDED.email, users.email)
             RETURNING id, role
         """
-        cursor.execute(query, (new_user_id, auth_provider_id, email, None))
+        actual_email = email if email else f"no-email-{auth_provider_id}@placeholder.com"
+        cursor.execute(query, (new_user_id, auth_provider_id, actual_email, None))
         row = cursor.fetchone()
         
         if row:

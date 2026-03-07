@@ -54,8 +54,18 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
         clerk_id = payload.get("sub")
         if not clerk_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")
-            
-        user_info = get_user_by_clerk_id(clerk_id)
+        
+        # Determine the user's email by fetching their full profile from Clerk
+        email = ""
+        try:
+            clerk_user = clerk.users.get(user_id=clerk_id)
+            email_list = getattr(clerk_user, 'email_addresses', [])
+            if email_list:
+                email = getattr(email_list[0], 'email_address', "")
+        except Exception as e:
+            print(f"[Auth] Warning: Could not fetch email from Clerk for {clerk_id}: {e}")
+        
+        user_info = get_user_by_clerk_id(clerk_id, email)
         if not user_info or not user_info.get("id"):
             raise HTTPException(status_code=401, detail="Could not resolve user identity in database")
             

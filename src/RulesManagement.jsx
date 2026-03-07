@@ -5,45 +5,57 @@ const RULE_TYPES = [
     {
         id: 'threshold',
         name: 'Threshold Rule',
-        description: 'Compares a numeric field against a specific value (e.g., Amount <= $5000).',
-        fields: ['fieldName', 'operator', 'value']
+        description: 'Compares a numeric field against a specific value (e.g., Amount ≤ $5000).',
+        fields: ['field_name', 'operator', 'value'],
+        operators: ['lte', 'lt', 'gte', 'gt', 'eq'],
+        exampleFields: ['claimAmount', 'completeness', 'fraudScore', 'claimNumber', 'policyNumber', 'claimantName', 'claimantId', 'claimType', 'policyStatus', 'incidentDate', 'filingDate', 'providerName', 'contactNumber']
     },
     {
         id: 'comparison',
         name: 'Comparison Rule',
         description: 'Matches a field value exactly (e.g., Policy Status = "Active").',
-        fields: ['fieldName', 'operator', 'value']
+        fields: ['field_name', 'operator', 'value'],
+        operators: ['eq'],
+        exampleFields: ['policyStatus', 'claimType', 'providerName', 'claimAmount', 'completeness', 'fraudScore', 'claimNumber', 'policyNumber', 'claimantName', 'claimantId', 'incidentDate', 'filingDate', 'contactNumber']
     },
     {
         id: 'cross_field',
         name: 'Cross-Field Analysis',
         description: 'Validates relationships between multiple fields (e.g., duplicate checks).',
-        fields: ['fieldName', 'dependencyField', 'logic']
+        fields: ['field_name', 'operator'],
+        operators: ['not_duplicate'],
+        exampleFields: ['claimNumber', 'policyNumber', 'claimantId']
     },
-    {
-        id: 'extraction_quality',
-        name: 'Extraction Quality',
-        description: 'Ensures data completeness and OCR confidence scores.',
-        fields: ['minConfidence', 'requiredFields']
-    }
 ];
 
-const INITIAL_RULES = [
-    { id: "BR001", name: "Claim Amount Threshold", description: "Claims ≤ $5,000 auto-approved", rule_type: "threshold", field: "claimAmount", operator: "lte", value: 5000, enabled: true },
-    { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", rule_type: "threshold", field: "claimAmount", operator: "gt", value: 25000, enabled: true },
-    { id: "BR003", name: "Document Completeness", description: "All required fields must be present", rule_type: "comparison", field: "completeness", operator: "gte", value: 80, enabled: true },
-];
+const API_URL = import.meta.env.PROD ? "" : "http://localhost:8000";
 
-export default function RulesManagement({ colors }) {
-    const [activeTab, setActiveTab] = useState('chatbot'); // chatbot | registry | configurator
-    const [rules, setRules] = useState(INITIAL_RULES);
+const OP_LABELS = {
+    lte: '≤', lt: '<', gte: '≥', gt: '>', eq: '=', not_duplicate: 'NOT DUPLICATE'
+};
+
+export default function RulesManagement({ colors, getToken }) {
+    const [activeTab, setActiveTab] = useState('registry');
+    const [rules, setRules] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    // Configurator form state
+    const [formName, setFormName] = useState('');
+    const [formDescription, setFormDescription] = useState('');
+    const [formWeight, setFormWeight] = useState(30);
+    const [formConfig, setFormConfig] = useState({});
 
     // Chatbot State
     const [messages, setMessages] = useState([
-        { role: 'ai', content: 'Hello! I am your AI Claims Intelligence Assistant. How can I help you optimize your business rules today?' }
+        { role: 'ai', content: 'Hello! I\'m your AI Rules Assistant. I can help you create new business rules step by step.\n\nTry saying something like:\n• "Create a rule for claims over $10,000"\n• "I need a rule to check policy status"\n• "Add a duplicate detection rule"\n\nOr just say "I want to add a new rule" and I\'ll guide you!' }
     ]);
     const [inputValue, setInputValue] = useState('');
+    const [chatStep, setChatStep] = useState('initial');
+    const [chatCollected, setChatCollected] = useState({});
+    const [chatFieldIndex, setChatFieldIndex] = useState(0);
+    const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef(null);
 
     const scrollToBottom = () => {
@@ -54,29 +66,176 @@ export default function RulesManagement({ colors }) {
         scrollToBottom();
     }, [messages]);
 
-    const handleSendMessage = (e) => {
+    // ─── Fetch Rules from DB ───
+    const fetchRules = async () => {
+        setLoading(true);
+        try {
+            const token = await getToken();
+            const res = await fetch(`${API_URL}/rules`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.status === "success") {
+                setRules(data.rules);
+            }
+        } catch (err) {
+            console.error("❌ [Rules] Error fetching:", err);
+        }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        fetchRules();
+    }, []);
+
+    // ─── Rule Actions ───
+    const updateRule = async (rule) => {
+        try {
+            const token = await getToken();
+            await fetch(`${API_URL}/rules/${rule.id}`, {
+                method: "PUT",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(rule)
+            });
+        } catch (err) {
+            console.error("❌ [Rules] Error updating:", err);
+        }
+    };
+
+    const deleteRuleById = async (id) => {
+        try {
+            const token = await getToken();
+            await fetch(`${API_URL}/rules/${id}`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            setRules(prev => prev.filter(r => r.id !== id));
+        } catch (err) {
+            console.error("❌ [Rules] Error deleting:", err);
+        }
+    };
+
+    const toggleRule = async (id) => {
+        const rule = rules.find(r => r.id === id);
+        if (!rule) return;
+        const updated = { ...rule, is_active: !rule.is_active };
+        setRules(prev => prev.map(r => r.id === id ? updated : r));
+        await updateRule(updated);
+    };
+
+    const updateThreshold = async (id, newValue) => {
+        const rule = rules.find(r => r.id === id);
+        if (!rule) return;
+        const updated = { ...rule, config: { ...rule.config, value: newValue } };
+        setRules(prev => prev.map(r => r.id === id ? updated : r));
+        // Debounce — only persist on mouse up (handled in component)
+        return updated;
+    };
+
+    const persistThreshold = async (rule) => {
+        await updateRule(rule);
+    };
+
+    // ─── Deploy Rule from Configurator ───
+    const deployRule = async () => {
+        if (!selectedType || !formName.trim()) return;
+        setSaving(true);
+        try {
+            const token = await getToken();
+            const res = await fetch(`${API_URL}/rules`, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    name: formName,
+                    description: formDescription,
+                    rule_type: selectedType.id,
+                    weight: formWeight,
+                    config: formConfig,
+                })
+            });
+            const data = await res.json();
+            if (data.status === "success") {
+                await fetchRules();
+                setSelectedType(null);
+                setFormName('');
+                setFormDescription('');
+                setFormWeight(30);
+                setFormConfig({});
+                setActiveTab('registry');
+            }
+        } catch (err) {
+            console.error("❌ [Rules] Error deploying:", err);
+        }
+        setSaving(false);
+    };
+
+    // ─── Chatbot ───
+    const handleSendMessage = async (e) => {
         e.preventDefault();
-        if (!inputValue.trim()) return;
+        if (!inputValue.trim() || chatLoading) return;
 
         const userMsg = { role: 'user', content: inputValue };
         setMessages(prev => [...prev, userMsg]);
+        const currentInput = inputValue;
         setInputValue('');
+        setChatLoading(true);
 
-        // Mock AI Response
-        setTimeout(() => {
-            setMessages(prev => [...prev, {
-                role: 'ai',
-                content: `I've analyzed your request: "${userMsg.content}". I can update the Claim Amount Threshold to $6,000 for you. Should I proceed with this change?`
-            }]);
-        }, 1000);
+        try {
+            const token = await getToken();
+            const res = await fetch(`${API_URL}/rules/ai-assist`, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: currentInput,
+                    context: {
+                        step: chatStep,
+                        collected: chatCollected,
+                        current_field_index: chatFieldIndex,
+                    }
+                })
+            });
+            const data = await res.json();
+
+            if (data.status === "success") {
+                setMessages(prev => [...prev, { role: 'ai', content: data.response }]);
+                setChatStep(data.next_step || 'initial');
+                setChatCollected(data.collected || {});
+                setChatFieldIndex(data.current_field_index || 0);
+
+                if (data.rule) {
+                    // Rule deployed! Refresh registry
+                    await fetchRules();
+                    setChatCollected({});
+                    setChatFieldIndex(0);
+                    setChatStep('initial');
+                }
+            }
+        } catch (err) {
+            console.error("❌ [Chat] Error:", err);
+            setMessages(prev => [...prev, { role: 'ai', content: 'Sorry, something went wrong. Please try again.' }]);
+        }
+        setChatLoading(false);
     };
 
-    const deleteRule = (id) => {
-        setRules(rules.filter(r => r.id !== id));
+    const inputStyle = {
+        width: '100%', background: 'rgba(17, 24, 39, 0.6)', border: `1px solid ${colors.border}`,
+        borderRadius: 8, padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none',
+        transition: 'border-color 0.2s ease'
     };
 
-    const toggleRule = (id) => {
-        setRules(rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+    const selectStyle = {
+        ...inputStyle, cursor: 'pointer', appearance: 'none',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 12L2 6h12z'/%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', paddingRight: 32
     };
 
     return (
@@ -85,9 +244,9 @@ export default function RulesManagement({ colors }) {
             {/* ── Tabs ── */}
             <div style={{ display: 'flex', gap: 32, borderBottom: `1px solid ${colors.border}`, marginBottom: 24, padding: '0 8px' }}>
                 {[
-                    { id: 'chatbot', label: 'AI INTELLIGENCE', icon: '🤖' },
-                    { id: 'configurator', label: 'RULE CONFIGURATOR', icon: '🛠️' },
                     { id: 'registry', label: 'RULE REGISTRY', icon: '📋' },
+                    { id: 'configurator', label: 'RULE CONFIGURATOR', icon: '🛠️' },
+                    { id: 'chatbot', label: 'AI INTELLIGENCE', icon: '🤖' },
                 ].map(t => (
                     <button
                         key={t.id}
@@ -110,71 +269,142 @@ export default function RulesManagement({ colors }) {
             {/* ── Content Area ── */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 40 }}>
 
-                {/* Section 1: Chatbot */}
-                {activeTab === 'chatbot' && (
-                    <div style={{
-                        height: '600px', display: 'flex', flexDirection: 'column',
-                        background: 'rgba(13, 17, 23, 0.4)', borderRadius: 20, border: `1px solid ${colors.border}`,
-                        overflow: 'hidden', backdropFilter: 'blur(10px)', animation: 'slideIn 0.4s ease'
-                    }}>
-                        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${colors.border}`, background: 'rgba(245, 158, 11, 0.03)' }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: colors.accent }}>AI RULES ASSISTANT</div>
-                            <div style={{ fontSize: 11, color: colors.muted }}>Natural Language Configuration Engine</div>
-                        </div>
-
-                        <div style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-                            {messages.map((m, i) => (
-                                <div key={i} style={{
-                                    alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                                    maxWidth: '80%', display: 'flex', flexDirection: 'column',
-                                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start'
-                                }}>
-                                    <div style={{
-                                        padding: '12px 18px', borderRadius: m.role === 'user' ? '18px 18px 2px 18px' : '18px 18px 18px 2px',
-                                        background: m.role === 'user' ? colors.accent : 'rgba(31, 41, 55, 0.6)',
-                                        color: m.role === 'user' ? '#000' : '#e5e7eb',
-                                        fontSize: 14, lineHeight: 1.5, fontWeight: 500,
-                                        boxShadow: m.role === 'user' ? `0 4px 15px ${colors.accent}33` : 'none',
-                                        border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`
-                                    }}>
-                                        {m.content}
+                {/* ══════════════════════════════════════════════════════════ */}
+                {/* Section 1: Registry (with Analysis Settings merged in)   */}
+                {/* ══════════════════════════════════════════════════════════ */}
+                {activeTab === 'registry' && (
+                    <div style={{ animation: 'slideIn 0.4s ease' }}>
+                        {loading ? (
+                            <div style={{ textAlign: 'center', padding: '60px 0', color: colors.muted }}>
+                                <div style={{ width: 40, height: 40, border: `3px solid ${colors.dim}`, borderTopColor: colors.accent, borderRadius: '50%', animation: 'spin 0.9s linear infinite', margin: '0 auto 16px' }} />
+                                Loading rules...
+                            </div>
+                        ) : (
+                            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 20, overflow: 'hidden', background: 'rgba(13, 17, 23, 0.4)', backdropFilter: 'blur(10px)' }}>
+                                <div style={{ padding: '24px 32px', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: 16, fontWeight: 800 }}>ACTIVE RULESET</div>
+                                        <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>Managing {rules.length} automated decision nodes — changes persist to database</div>
                                     </div>
-                                    <div style={{ fontSize: 10, color: colors.muted, marginTop: 6, fontFamily: 'IBM Plex Mono' }}>
-                                        {m.role === 'user' ? 'YOU' : 'AI ASSISTANT'}
+                                    <div style={{ display: 'flex', gap: 12 }}>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700 }}>SYSTEM STATUS</div>
+                                            <div style={{ fontSize: 12, color: '#10b981', fontWeight: 800 }}>OPTIMIZED</div>
+                                        </div>
                                     </div>
                                 </div>
-                            ))}
-                            <div ref={chatEndRef} />
-                        </div>
 
-                        <form onSubmit={handleSendMessage} style={{ padding: 20, background: 'rgba(3, 7, 18, 0.4)', borderTop: `1px solid ${colors.border}` }}>
-                            <div style={{ position: 'relative', display: 'flex', gap: 12 }}>
-                                <input
-                                    type="text"
-                                    value={inputValue}
-                                    onChange={(e) => setInputValue(e.target.value)}
-                                    placeholder="Ask me to 'Create a rule for claims over $10k'..."
-                                    style={{
-                                        flex: 1, background: 'rgba(17, 24, 39, 0.8)', border: `1px solid ${colors.border}`,
-                                        borderRadius: 12, padding: '14px 20px', color: '#fff', fontSize: 14,
-                                        outline: 'none', transition: 'all 0.3s ease'
-                                    }}
-                                    onFocus={(e) => e.target.style.borderColor = colors.accent}
-                                    onBlur={(e) => e.target.style.borderColor = colors.border}
-                                />
-                                <button type="submit" style={{
-                                    background: colors.accent, color: '#000', border: 'none', borderRadius: 12,
-                                    padding: '0 24px', fontWeight: 800, fontSize: 13, cursor: 'pointer',
-                                    transition: 'all 0.3s ease', boxShadow: `0 4px 15px ${colors.accent}44`
-                                }}>
-                                    SEND
-                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    {rules.map((rule, idx) => {
+                                        const isThreshold = rule.rule_type === 'threshold';
+                                        const configValue = rule.config?.value;
+                                        const fieldName = rule.config?.field_name || '';
+                                        const isAmount = fieldName === 'claimAmount';
+
+                                        return (
+                                            <div key={rule.id} style={{
+                                                padding: '24px 32px', borderBottom: idx === rules.length - 1 ? 'none' : `1px solid ${colors.border}`,
+                                                transition: 'all 0.3s ease', opacity: rule.is_active ? 1 : 0.4
+                                            }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 220px 140px 100px', alignItems: 'center', gap: 24 }}>
+                                                    <div style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 13 }}>{rule.id}</div>
+
+                                                    <div>
+                                                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{rule.name}</div>
+                                                        <div style={{ fontSize: 12, color: colors.muted }}>{rule.description}</div>
+                                                    </div>
+
+                                                    <div>
+                                                        <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>
+                                                            {isThreshold ? 'THRESHOLD' : 'CONFIG'}
+                                                        </div>
+                                                        {isThreshold ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                                <input
+                                                                    type="range"
+                                                                    min={isAmount ? 1000 : 0}
+                                                                    max={isAmount ? 100000 : 100}
+                                                                    step={isAmount ? 1000 : 5}
+                                                                    value={configValue || 0}
+                                                                    disabled={!rule.is_active}
+                                                                    style={{ flex: 1, accentColor: colors.accent, cursor: rule.is_active ? 'pointer' : 'not-allowed' }}
+                                                                    onChange={(e) => updateThreshold(rule.id, parseInt(e.target.value))}
+                                                                    onMouseUp={() => {
+                                                                        const current = rules.find(r => r.id === rule.id);
+                                                                        if (current) persistThreshold(current);
+                                                                    }}
+                                                                />
+                                                                <span style={{ fontSize: 12, fontWeight: 800, minWidth: 70, textAlign: 'right' }}>
+                                                                    {isAmount ? `$${(configValue || 0).toLocaleString()}` : `${configValue || 0}%`}
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ fontSize: 13, fontWeight: 700 }}>
+                                                                {rule.config?.operator ? `${OP_LABELS[rule.config.operator] || rule.config.operator} ${rule.config.value || ''}` : '—'}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                        <button
+                                                            onClick={() => toggleRule(rule.id)}
+                                                            style={{
+                                                                background: rule.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(31, 41, 55, 0.4)',
+                                                                color: rule.is_active ? '#10b981' : colors.muted,
+                                                                border: `1px solid ${rule.is_active ? '#10b981' : colors.border}`,
+                                                                padding: '6px 16px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                                                                transition: 'all 0.3s ease'
+                                                            }}
+                                                        >
+                                                            {rule.is_active ? 'ENABLED' : 'DISABLED'}
+                                                        </button>
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                                                        <button
+                                                            onClick={() => deleteRuleById(rule.id)}
+                                                            style={{
+                                                                background: 'none', border: 'none', color: '#ef4444',
+                                                                fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
+                                                            }}
+                                                            onMouseEnter={(e) => e.target.style.opacity = 1}
+                                                            onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                                                        >🗑️</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div style={{ padding: '20px 32px', background: 'rgba(31, 41, 55, 0.2)', display: 'flex', justifyContent: 'center' }}>
+                                    <button
+                                        onClick={() => setActiveTab('configurator')}
+                                        style={{
+                                            background: 'none', border: `1px dashed ${colors.border}`, color: colors.muted,
+                                            padding: '8px 24px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.target.style.borderColor = colors.accent;
+                                            e.target.style.color = colors.text;
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.target.style.borderColor = colors.border;
+                                            e.target.style.color = colors.muted;
+                                        }}
+                                    >
+                                        + ADD NEW BUSINESS RULE
+                                    </button>
+                                </div>
                             </div>
-                        </form>
+                        )}
                     </div>
                 )}
 
-                {/* Section 2: Configurator */}
+                {/* ══════════════════════════════════════════ */}
+                {/* Section 2: Configurator (DB-backed)       */}
+                {/* ══════════════════════════════════════════ */}
                 {activeTab === 'configurator' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 24, animation: 'slideIn 0.4s ease' }}>
                         {/* Type Selector */}
@@ -183,7 +413,10 @@ export default function RulesManagement({ colors }) {
                             {RULE_TYPES.map(type => (
                                 <div
                                     key={type.id}
-                                    onClick={() => setSelectedType(type)}
+                                    onClick={() => {
+                                        setSelectedType(type);
+                                        setFormConfig({});
+                                    }}
                                     style={{
                                         padding: '16px 20px', borderRadius: 12, cursor: 'pointer',
                                         background: selectedType?.id === type.id ? 'rgba(245, 158, 11, 0.1)' : 'rgba(17, 24, 39, 0.4)',
@@ -221,28 +454,75 @@ export default function RulesManagement({ colors }) {
 
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
                                         <div style={{ gridColumn: '1 / -1' }}>
-                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>RULE NAME</label>
-                                            <input type="text" placeholder="e.g. Audit Large Medical Claims" style={{
-                                                width: '100%', background: 'rgba(17, 24, 39, 0.6)', border: `1px solid ${colors.border}`,
-                                                borderRadius: 8, padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none'
-                                            }} />
+                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>RULE NAME *</label>
+                                            <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. Audit Large Medical Claims" style={inputStyle} />
                                         </div>
-                                        {selectedType.fields.map(f => (
-                                            <div key={f}>
-                                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>{f.toUpperCase()}</label>
-                                                <input type="text" style={{
-                                                    width: '100%', background: 'rgba(17, 24, 39, 0.6)', border: `1px solid ${colors.border}`,
-                                                    borderRadius: 8, padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none'
-                                                }} />
+                                        <div style={{ gridColumn: '1 / -1' }}>
+                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>DESCRIPTION</label>
+                                            <input type="text" value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="What does this rule check?" style={inputStyle} />
+                                        </div>
+
+                                        {selectedType.fields.includes('field_name') && (
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>FIELD NAME</label>
+                                                <select
+                                                    value={formConfig.field_name || ''}
+                                                    onChange={e => setFormConfig(prev => ({ ...prev, field_name: e.target.value }))}
+                                                    style={selectStyle}
+                                                >
+                                                    <option value="">Select field...</option>
+                                                    {selectedType.exampleFields.map(f => <option key={f} value={f}>{f}</option>)}
+                                                </select>
                                             </div>
-                                        ))}
+                                        )}
+
+                                        {selectedType.fields.includes('operator') && (
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>OPERATOR</label>
+                                                <select
+                                                    value={formConfig.operator || ''}
+                                                    onChange={e => setFormConfig(prev => ({ ...prev, operator: e.target.value }))}
+                                                    style={selectStyle}
+                                                >
+                                                    <option value="">Select operator...</option>
+                                                    {selectedType.operators.map(op => <option key={op} value={op}>{OP_LABELS[op] || op} ({op})</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {selectedType.fields.includes('value') && (
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>VALUE</label>
+                                                <input
+                                                    type="text"
+                                                    value={formConfig.value || ''}
+                                                    onChange={e => {
+                                                        const v = e.target.value;
+                                                        setFormConfig(prev => ({ ...prev, value: isNaN(v) ? v : Number(v) }));
+                                                    }}
+                                                    placeholder="e.g. 5000 or active"
+                                                    style={inputStyle}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: colors.muted, marginBottom: 10 }}>WEIGHT</label>
+                                            <input type="number" min={1} max={100} value={formWeight} onChange={e => setFormWeight(parseInt(e.target.value) || 30)} style={inputStyle} />
+                                        </div>
                                     </div>
 
                                     <div style={{ marginTop: 40, display: 'flex', gap: 16 }}>
-                                        <button style={{
-                                            flex: 1, background: colors.accent, color: '#000', border: 'none', borderRadius: 10,
-                                            padding: '14px 0', fontWeight: 800, cursor: 'pointer', transition: 'all 0.3s ease'
-                                        }}>DEPLOY RULE</button>
+                                        <button
+                                            onClick={deployRule}
+                                            disabled={saving || !formName.trim()}
+                                            style={{
+                                                flex: 1, background: (saving || !formName.trim()) ? colors.dim : colors.accent,
+                                                color: (saving || !formName.trim()) ? colors.muted : '#000', border: 'none', borderRadius: 10,
+                                                padding: '14px 0', fontWeight: 800, cursor: (saving || !formName.trim()) ? 'not-allowed' : 'pointer',
+                                                transition: 'all 0.3s ease'
+                                            }}
+                                        >{saving ? 'DEPLOYING...' : 'DEPLOY RULE'}</button>
                                         <button
                                             onClick={() => setSelectedType(null)}
                                             style={{
@@ -257,106 +537,101 @@ export default function RulesManagement({ colors }) {
                     </div>
                 )}
 
-                {/* Section 3: Registry */}
-                {activeTab === 'registry' && (
-                    <div style={{ animation: 'slideIn 0.4s ease' }}>
-                        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 20, overflow: 'hidden', background: 'rgba(13, 17, 23, 0.4)', backdropFilter: 'blur(10px)' }}>
-                            <div style={{ padding: '24px 32px', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                    <div style={{ fontSize: 16, fontWeight: 800 }}>ACTIVE RULESET</div>
-                                    <div style={{ fontSize: 12, color: colors.muted, marginTop: 4 }}>Managing {rules.length} automated decision nodes</div>
-                                </div>
-                                <div style={{ display: 'flex', gap: 12 }}>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700 }}>SYSTEM STATUS</div>
-                                        <div style={{ fontSize: 12, color: '#10b981', fontWeight: 800 }}>OPTIMIZED</div>
-                                    </div>
-                                </div>
+                {activeTab === 'chatbot' && (
+                    <div style={{
+                        height: '600px', display: 'flex', flexDirection: 'column',
+                        background: 'rgba(13, 17, 23, 0.4)', borderRadius: 20, border: `1px solid ${colors.border}`,
+                        overflow: 'hidden', backdropFilter: 'blur(10px)', animation: 'slideIn 0.4s ease'
+                    }}>
+                        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${colors.border}`, background: 'rgba(245, 158, 11, 0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: colors.accent }}>AI RULES ASSISTANT</div>
+                                <div style={{ fontSize: 11, color: colors.muted }}>Conversational Rule Builder — Powered by LangGraph</div>
                             </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                {rules.map((rule, idx) => (
-                                    <div key={rule.id} style={{
-                                        padding: '24px 32px', borderBottom: idx === rules.length - 1 ? 'none' : `1px solid ${colors.border}`,
-                                        display: 'grid', gridTemplateColumns: '60px 1fr 180px 140px 100px', alignItems: 'center', gap: 24,
-                                        transition: 'all 0.3s ease', opacity: rule.enabled ? 1 : 0.4
-                                    }}>
-                                        <div style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 13 }}>{rule.id}</div>
-
-                                        <div>
-                                            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{rule.name}</div>
-                                            <div style={{ fontSize: 12, color: colors.muted }}>{rule.description}</div>
-                                        </div>
-
-                                        <div>
-                                            <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>THRESHOLD</div>
-                                            {rule.rule_type === 'threshold' ? (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                    <input
-                                                        type="range"
-                                                        min="0" max="50000" step="500"
-                                                        value={rule.value}
-                                                        style={{ flex: 1, accentColor: colors.accent }}
-                                                        onChange={(e) => setRules(rules.map(r => r.id === rule.id ? { ...r, value: parseInt(e.target.value) } : r))}
-                                                    />
-                                                    <span style={{ fontSize: 12, fontWeight: 800, minWidth: 60, textAlign: 'right' }}>${rule.value.toLocaleString()}</span>
-                                                </div>
-                                            ) : (
-                                                <div style={{ fontSize: 13, fontWeight: 700 }}>VALUE: {rule.value}%</div>
-                                            )}
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                            <button
-                                                onClick={() => toggleRule(rule.id)}
-                                                style={{
-                                                    background: rule.enabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(31, 41, 55, 0.4)',
-                                                    color: rule.enabled ? '#10b981' : colors.muted,
-                                                    border: `1px solid ${rule.enabled ? '#10b981' : colors.border}`,
-                                                    padding: '6px 16px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                                                    transition: 'all 0.3s ease'
-                                                }}
-                                            >
-                                                {rule.enabled ? 'ENABLED' : 'DISABLED'}
-                                            </button>
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                                            <button
-                                                onClick={() => deleteRule(rule.id)}
-                                                style={{
-                                                    background: 'none', border: 'none', color: '#ef4444',
-                                                    fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
-                                                }}
-                                                onMouseEnter={(e) => e.target.style.opacity = 1}
-                                                onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                            >🗑️</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div style={{ padding: '20px 32px', background: 'rgba(31, 41, 55, 0.2)', display: 'flex', justifyContent: 'center' }}>
+                            {chatStep !== 'initial' && (
                                 <button
-                                    onClick={() => setActiveTab('configurator')}
+                                    onClick={() => {
+                                        setChatStep('initial');
+                                        setChatCollected({});
+                                        setChatFieldIndex(0);
+                                        setMessages(prev => [...prev, { role: 'ai', content: 'Conversation reset. What would you like to do?' }]);
+                                    }}
                                     style={{
-                                        background: 'none', border: `1px dashed ${colors.border}`, color: colors.muted,
-                                        padding: '8px 24px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                        transition: 'all 0.3s ease'
+                                        background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)',
+                                        borderRadius: 8, padding: '6px 14px', fontSize: 10, fontWeight: 800, cursor: 'pointer'
                                     }}
-                                    onMouseEnter={(e) => {
-                                        e.target.style.borderColor = colors.accent;
-                                        e.target.style.color = colors.text;
+                                >RESET</button>
+                            )}
+                        </div>
+
+                        <div style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {messages.map((m, i) => (
+                                <div key={i} style={{
+                                    alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                    maxWidth: '80%', display: 'flex', flexDirection: 'column',
+                                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                    animation: 'fadeIn 0.3s ease'
+                                }}>
+                                    <div style={{
+                                        padding: '12px 18px', borderRadius: m.role === 'user' ? '18px 18px 2px 18px' : '18px 18px 18px 2px',
+                                        background: m.role === 'user' ? colors.accent : 'rgba(31, 41, 55, 0.6)',
+                                        color: m.role === 'user' ? '#000' : '#e5e7eb',
+                                        fontSize: 14, lineHeight: 1.6, fontWeight: 500,
+                                        boxShadow: m.role === 'user' ? `0 4px 15px ${colors.accent}33` : 'none',
+                                        border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
+                                        whiteSpace: 'pre-wrap'
+                                    }}>
+                                        {m.content}
+                                    </div>
+                                    <div style={{ fontSize: 10, color: colors.muted, marginTop: 4, fontFamily: 'IBM Plex Mono' }}>
+                                        {m.role === 'user' ? 'YOU' : '🤖 AI ASSISTANT'}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {chatLoading && (
+                                <div style={{
+                                    alignSelf: 'flex-start', padding: '12px 18px',
+                                    background: 'rgba(31, 41, 55, 0.6)', border: `1px solid ${colors.border}`,
+                                    borderRadius: '18px 18px 18px 2px', display: 'flex', gap: 6, alignItems: 'center'
+                                }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent, animation: 'pulse 1s infinite' }} />
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent, animation: 'pulse 1s infinite 0.2s' }} />
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent, animation: 'pulse 1s infinite 0.4s' }} />
+                                </div>
+                            )}
+
+                            <div ref={chatEndRef} />
+                        </div>
+
+                        <form onSubmit={handleSendMessage} style={{ padding: 20, background: 'rgba(3, 7, 18, 0.4)', borderTop: `1px solid ${colors.border}` }}>
+                            <div style={{ position: 'relative', display: 'flex', gap: 12 }}>
+                                <input
+                                    type="text"
+                                    value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}
+                                    placeholder={chatStep === 'initial' ? 'Describe the rule you want to create...' : 'Type your answer...'}
+                                    disabled={chatLoading}
+                                    style={{
+                                        flex: 1, background: 'rgba(17, 24, 39, 0.8)', border: `1px solid ${colors.border}`,
+                                        borderRadius: 12, padding: '14px 20px', color: '#fff', fontSize: 14,
+                                        outline: 'none', transition: 'all 0.3s ease',
+                                        opacity: chatLoading ? 0.5 : 1
                                     }}
-                                    onMouseLeave={(e) => {
-                                        e.target.style.borderColor = colors.border;
-                                        e.target.style.color = colors.muted;
-                                    }}
-                                >
-                                    + ADD NEW BUSINESS RULE
+                                    onFocus={(e) => e.target.style.borderColor = colors.accent}
+                                    onBlur={(e) => e.target.style.borderColor = colors.border}
+                                />
+                                <button type="submit" disabled={chatLoading} style={{
+                                    background: chatLoading ? colors.dim : colors.accent, color: chatLoading ? colors.muted : '#000',
+                                    border: 'none', borderRadius: 12,
+                                    padding: '0 24px', fontWeight: 800, fontSize: 13,
+                                    cursor: chatLoading ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.3s ease', boxShadow: chatLoading ? 'none' : `0 4px 15px ${colors.accent}44`
+                                }}>
+                                    SEND
                                 </button>
                             </div>
-                        </div>
+                        </form>
                     </div>
                 )}
             </div>

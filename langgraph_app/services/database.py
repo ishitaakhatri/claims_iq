@@ -265,3 +265,211 @@ def backfill_orphaned_claims(user_id: str) -> int:
     finally:
         if conn:
             conn.close()
+
+
+# ─── Business Rules CRUD ──────────────────────────────────────────────────────
+
+DEFAULT_RULES = [
+    {"id": "BR001", "name": "Claim Amount Threshold", "description": "Claims ≤ $5,000 auto-approved", "rule_type": "threshold", "weight": 30, "priority": 1, "is_active": True, "config": {"field_name": "claimAmount", "operator": "lte", "value": 5000}},
+    {"id": "BR002", "name": "High-Value Escalation", "description": "Claims > $25,000 require senior review", "rule_type": "threshold", "weight": 40, "priority": 2, "is_active": True, "config": {"field_name": "claimAmount", "operator": "lte", "value": 25000}},
+    {"id": "BR003", "name": "Document Completeness", "description": "All required fields must be present (Min 80%)", "rule_type": "threshold", "weight": 25, "priority": 3, "is_active": True, "config": {"field_name": "completeness", "operator": "gte", "value": 80}},
+    {"id": "BR004", "name": "Fraud Indicators", "description": "No fraud flags detected (Threshold ≤ 30)", "rule_type": "threshold", "weight": 50, "priority": 4, "is_active": True, "config": {"field_name": "fraudScore", "operator": "lte", "value": 30}},
+    {"id": "BR005", "name": "Policy Active Status", "description": "Policy must be active at time of claim", "rule_type": "comparison", "weight": 35, "priority": 5, "is_active": True, "config": {"field_name": "policyStatus", "operator": "eq", "value": "active"}},
+    {"id": "BR006", "name": "Duplicate Claim Check", "description": "No duplicate claim reference found", "rule_type": "cross_field", "weight": 45, "priority": 6, "is_active": True, "config": {"field_name": "claimNumber", "operator": "not_duplicate"}},
+]
+
+
+def ensure_rules_table():
+    """Creates the business_rules table if it does not exist."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS business_rules (
+                id VARCHAR(20) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                rule_type VARCHAR(50) NOT NULL,
+                weight INTEGER DEFAULT 30,
+                priority INTEGER DEFAULT 1,
+                is_active BOOLEAN DEFAULT TRUE,
+                config JSONB NOT NULL DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        print("[Database] business_rules table ensured.")
+    except Exception as e:
+        print(f"[Database] Error ensuring rules table: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def seed_default_rules():
+    """Seeds the business_rules table with defaults if it is empty."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM business_rules")
+        count = cursor.fetchone()[0]
+        if count == 0:
+            for rule in DEFAULT_RULES:
+                cursor.execute(
+                    """
+                    INSERT INTO business_rules (id, name, description, rule_type, weight, priority, is_active, config)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (rule["id"], rule["name"], rule["description"], rule["rule_type"],
+                     rule["weight"], rule["priority"], rule["is_active"], json.dumps(rule["config"]))
+                )
+            conn.commit()
+            print(f"[Database] Seeded {len(DEFAULT_RULES)} default business rules.")
+        cursor.close()
+    except Exception as e:
+        print(f"[Database] Error seeding rules: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_all_rules() -> list:
+    """Returns all business rules from the database, ordered by priority."""
+    ensure_rules_table()
+    seed_default_rules()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, description, rule_type, weight, priority, is_active, config
+            FROM business_rules
+            ORDER BY priority ASC
+        """)
+        rows = cursor.fetchall()
+        cursor.close()
+        rules = []
+        for row in rows:
+            config = row[7] if isinstance(row[7], dict) else json.loads(row[7]) if row[7] else {}
+            rules.append({
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "rule_type": row[3],
+                "weight": row[4],
+                "priority": row[5],
+                "is_active": row[6],
+                "config": config,
+            })
+        print(f"[Database] Fetched {len(rules)} business rules.")
+        return rules
+    except Exception as e:
+        print(f"[Database] Error fetching rules: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def upsert_rule(rule: dict) -> dict:
+    """
+    Insert or update a business rule.
+    If rule['id'] exists, updates the row. Otherwise inserts a new one.
+    Returns the upserted rule.
+    """
+    ensure_rules_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        rule_id = rule.get("id")
+        if not rule_id:
+            # Generate a new rule ID using MAX to avoid collisions after deletions
+            cursor.execute("""
+                SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 3) AS INTEGER)), 0)
+                FROM business_rules
+                WHERE id ~ '^BR[0-9]+$'
+            """)
+            max_num = cursor.fetchone()[0]
+            rule_id = f"BR{max_num + 1:03d}"
+
+        config = rule.get("config", {})
+        cursor.execute(
+            """
+            INSERT INTO business_rules (id, name, description, rule_type, weight, priority, is_active, config, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (id)
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                rule_type = EXCLUDED.rule_type,
+                weight = EXCLUDED.weight,
+                priority = EXCLUDED.priority,
+                is_active = EXCLUDED.is_active,
+                config = EXCLUDED.config,
+                updated_at = NOW()
+            RETURNING id, name, description, rule_type, weight, priority, is_active, config
+            """,
+            (
+                rule_id,
+                rule.get("name", "Unnamed Rule"),
+                rule.get("description", ""),
+                rule.get("rule_type", "threshold"),
+                rule.get("weight", 30),
+                rule.get("priority", 99),
+                rule.get("is_active", True),
+                json.dumps(config),
+            )
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+
+        result = {
+            "id": row[0], "name": row[1], "description": row[2],
+            "rule_type": row[3], "weight": row[4], "priority": row[5],
+            "is_active": row[6],
+            "config": row[7] if isinstance(row[7], dict) else json.loads(row[7]) if row[7] else {},
+        }
+        print(f"[Database] Upserted rule: {result['id']}")
+        return result
+    except Exception as e:
+        print(f"[Database] Error upserting rule: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+
+def delete_rule(rule_id: str) -> bool:
+    """Deletes a business rule by ID. Returns True if a row was deleted."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM business_rules WHERE id = %s", (rule_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Deleted rule {rule_id}: {deleted}")
+        return deleted
+    except Exception as e:
+        print(f"[Database] Error deleting rule: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

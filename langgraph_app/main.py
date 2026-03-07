@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -7,8 +7,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import app_graph
 from .services.blob_storage import upload_to_blob
-from .services.database import save_claim_to_db, get_claims_history, backfill_orphaned_claims
+from .services.database import (
+    save_claim_to_db, get_claims_history, backfill_orphaned_claims,
+    get_all_rules, upsert_rule, delete_rule
+)
 from .auth import get_current_user
+from .graph.rule_assistant import rule_assistant_app
 from dotenv import load_dotenv
 import json
 
@@ -31,6 +35,20 @@ class ClaimRequest(BaseModel):
     file_name: str
     rule_config: Optional[dict] = None
 
+class RuleRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+    rule_type: str = "threshold"
+    weight: int = 30
+    priority: int = 99
+    is_active: bool = True
+    config: dict = {}
+
+class ChatMessage(BaseModel):
+    message: str
+    context: Optional[dict] = None
+
 @app.get("/claims-history")
 async def claims_history(user_info: dict = Depends(get_current_user)):
     """
@@ -45,6 +63,131 @@ async def claims_history(user_info: dict = Depends(get_current_user)):
     except Exception as e:
         print(f"[API] History Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Rules CRUD Endpoints ─────────────────────────────────────────────────────
+
+@app.get("/rules")
+async def list_rules(user_info: dict = Depends(get_current_user)):
+    """Fetch all business rules from the database."""
+    try:
+        rules = get_all_rules()
+        return {"status": "success", "rules": rules}
+    except Exception as e:
+        print(f"[API] Rules Fetch Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rules")
+async def create_rule(request: RuleRequest, user_info: dict = Depends(get_current_user)):
+    """Create a new business rule."""
+    try:
+        rule = upsert_rule(request.dict())
+        return {"status": "success", "rule": rule}
+    except Exception as e:
+        print(f"[API] Rule Create Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/rules/{rule_id}")
+async def update_rule(rule_id: str, request: RuleRequest, user_info: dict = Depends(get_current_user)):
+    """Update an existing business rule."""
+    try:
+        data = request.dict()
+        data["id"] = rule_id
+        rule = upsert_rule(data)
+        return {"status": "success", "rule": rule}
+    except Exception as e:
+        print(f"[API] Rule Update Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/rules/{rule_id}")
+async def remove_rule(rule_id: str, user_info: dict = Depends(get_current_user)):
+    """Delete a business rule by ID."""
+    try:
+        deleted = delete_rule(rule_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        return {"status": "success", "deleted": rule_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Rule Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── AI Rules Assistant ───────────────────────────────────────────────────────
+
+RULE_TYPE_FIELDS = {
+    "threshold": {
+        "label": "Threshold Rule",
+        "description": "Compares a numeric field against a specific value (e.g., Amount ≤ $5000).",
+        "required_fields": ["field_name", "operator", "value"],
+        "operators": ["lte", "lt", "gte", "gt", "eq"],
+        "example_fields": ["claimAmount", "completeness", "fraudScore", "claimNumber", "policyNumber", "claimantName", "claimantId", "claimType", "policyStatus", "incidentDate", "filingDate", "providerName", "contactNumber"]
+    },
+    "comparison": {
+        "label": "Comparison Rule",
+        "description": "Matches a field value exactly (e.g., Policy Status = \"Active\").",
+        "required_fields": ["field_name", "operator", "value"],
+        "operators": ["eq"],
+        "example_fields": ["policyStatus", "claimType", "providerName", "claimAmount", "completeness", "fraudScore", "claimNumber", "policyNumber", "claimantName", "claimantId", "incidentDate", "filingDate", "contactNumber"]
+    },
+    "cross_field": {
+        "label": "Cross-Field Analysis",
+        "description": "Validates relationships between fields (e.g., duplicate checks).",
+        "required_fields": ["field_name", "operator"],
+        "operators": ["not_duplicate"],
+        "example_fields": ["claimNumber", "policyNumber", "claimantId"]
+    },
+}
+
+
+@app.post("/rules/ai-assist")
+async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_current_user)):
+    """
+    AI assistant for rule creation using LangGraph — conversational flow.
+    """
+    try:
+        ctx = request.context or {}
+        
+        initial_state = {
+            "message": request.message,
+            "context": ctx,
+            "response": "",
+            "next_step": "initial",
+            "collected": ctx.get("collected", {}),
+            "current_field_index": ctx.get("current_field_index", 0),
+            "rule_data": None,
+        }
+        
+        result = rule_assistant_app.invoke(initial_state)
+        
+        # If graph says deploy, do the DB insert here
+        if result.get("response") == "__DEPLOY__" and result.get("rule_data"):
+            saved = upsert_rule(result["rule_data"])
+            return {
+                "status": "success",
+                "response": f"✅ Rule **{saved['name']}** ({saved['id']}) has been deployed successfully!\n\nYou can view and edit it in the **Rule Registry** tab.",
+                "next_step": "done",
+                "collected": {},
+                "current_field_index": 0,
+                "rule": saved,
+            }
+        
+        return {
+            "status": "success",
+            "response": result.get("response", "I'm not sure what you need. Try describing the rule you'd like to create!"),
+            "next_step": result.get("next_step", "initial"),
+            "collected": result.get("collected", {}),
+            "current_field_index": result.get("current_field_index", 0),
+        }
+
+    except Exception as e:
+        print(f"[API] AI Assist Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/process-claim")
 async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_current_user)):

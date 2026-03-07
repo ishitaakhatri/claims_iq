@@ -497,7 +497,7 @@ export default function ClaimsProcessor() {
             <div style={{ padding: 28, borderRight: view === 'dashboard' ? `1px solid ${colors.border}` : "none", overflowY: "auto" }}>
 
               {view === "rules" ? (
-                <RulesManagement colors={colors} />
+                <RulesManagement colors={colors} getToken={getToken} />
               ) : (
                 <>
                   {/* Upload Zone */}
@@ -1163,76 +1163,6 @@ export default function ClaimsProcessor() {
             {view === 'dashboard' && (
               <div style={{ padding: 24, background: "rgba(13, 17, 23, 0.9)", backdropFilter: "blur(4px)", maxHeight: "100vh", overflowY: "auto", borderLeft: `1px solid ${colors.border}` }}>
 
-                {/* Analysis Settings */}
-                <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: `1px solid ${colors.border}` }}>
-                  <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 16, fontWeight: 700 }}>⚙️ ANALYSIS SETTINGS</div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    {BUSINESS_RULES.map(rule => (
-                      <div key={rule.id} style={{
-                        background: "rgba(17, 24, 39, 0.8)",
-                        backdropFilter: "blur(8px)",
-                        padding: 12,
-                        borderRadius: 10,
-                        border: `1px solid ${colors.border}`,
-                        transition: "all 0.3s ease",
-                        cursor: "pointer",
-                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)"
-                      }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = colors.accent;
-                          e.currentTarget.style.boxShadow = `0 4px 12px rgba(245, 158, 11, 0.15)`;
-                          e.currentTarget.style.transform = "translateY(-1px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = colors.border;
-                          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: rule.hasThreshold ? 12 : 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <input
-                              type="checkbox"
-                              checked={ruleConfig[rule.id].enabled}
-                              onChange={(e) => setRuleConfig(prev => ({
-                                ...prev,
-                                [rule.id]: { ...prev[rule.id], enabled: e.target.checked }
-                              }))}
-                              style={{ cursor: "pointer", accentColor: colors.accent, width: 18, height: 18 }}
-                            />
-                            <span style={{ fontSize: 12, fontWeight: 600, color: ruleConfig[rule.id].enabled ? colors.text : colors.muted }}>{rule.name}</span>
-                          </div>
-                          <span style={{ fontFamily: "IBM Plex Mono", fontSize: 9, color: colors.muted }}>{rule.id}</span>
-                        </div>
-
-                        {rule.hasThreshold && ruleConfig[rule.id].enabled && (
-                          <div>
-                            <input
-                              type="range"
-                              min={rule.min}
-                              max={rule.max}
-                              step={rule.step}
-                              value={ruleConfig[rule.id].threshold}
-                              onChange={(e) => setRuleConfig(prev => ({
-                                ...prev,
-                                [rule.id]: { ...prev[rule.id], threshold: Number(e.target.value) }
-                              }))}
-                              style={{ width: "100%", accentColor: colors.accent, height: 5, cursor: "pointer", borderRadius: 3 }}
-                            />
-                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                              <span style={{ fontSize: 9, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.min.toLocaleString()}` : `${rule.min}%`}</span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: colors.accent }}>
-                                {rule.field === "claimAmount" ? `$${ruleConfig[rule.id].threshold.toLocaleString()}` : `${ruleConfig[rule.id].threshold}%`}
-                              </span>
-                              <span style={{ fontSize: 9, color: colors.muted }}>{rule.field === "claimAmount" ? `$${rule.max.toLocaleString()}` : `${rule.max}%`}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Current Status */}
                 <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: `1px solid ${colors.border}` }}>
                   <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 12, fontWeight: 700 }}>📊 CURRENT STATUS</div>
@@ -1353,9 +1283,9 @@ export default function ClaimsProcessor() {
                     Claim #{selectedLog.claim} · {selectedLog.time}
                   </div>
                   {selectedLog.submitterEmail && (
-                      <div style={{ fontSize: 11, color: colors.accent, marginTop: 6, fontFamily: "IBM Plex Mono", fontWeight: 700 }}>
-                        <span style={{opacity: 0.8}}>SUBMITTER:</span> {selectedLog.submitterEmail}
-                      </div>
+                    <div style={{ fontSize: 11, color: colors.accent, marginTop: 6, fontFamily: "IBM Plex Mono", fontWeight: 700 }}>
+                      <span style={{ opacity: 0.8 }}>SUBMITTER:</span> {selectedLog.submitterEmail}
+                    </div>
                   )}
                 </div>
                 <button onClick={() => setSelectedLog(null)} style={{

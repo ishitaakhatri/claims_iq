@@ -1,0 +1,41 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	ocr(ocr)
+	extraction(extraction)
+	br002(br002)
+	br003(br003)
+	br005(br005)
+	br009(br009)
+	br007(br007)
+	br011(br011)
+	br006(br006)
+	br012(br012)
+	evaluation(evaluation)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> ocr;
+	br002 --> evaluation;
+	br003 --> evaluation;
+	br005 --> evaluation;
+	br006 --> evaluation;
+	br007 --> evaluation;
+	br009 --> evaluation;
+	br011 --> evaluation;
+	br012 --> evaluation;
+	extraction --> br002;
+	extraction --> br003;
+	extraction --> br005;
+	extraction --> br006;
+	extraction --> br007;
+	extraction --> br009;
+	extraction --> br011;
+	extraction --> br012;
+	ocr --> extraction;
+	evaluation --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -28,14 +28,11 @@ def create_graph(active_rules: list):
     workflow.add_edge(START, "ocr")
     workflow.add_edge("ocr", "extraction")
     
-    # Sequential Rule Engine
-    last_node = "extraction"
+    # Parallel Rule Engine — all rules fan out from extraction, fan in to evaluation
     for rule in active_rules:
         node_id = rule["id"].lower()
-        workflow.add_edge(last_node, node_id)
-        last_node = node_id
-        
-    workflow.add_edge(last_node, "evaluation")
+        workflow.add_edge("extraction", node_id)
+        workflow.add_edge(node_id, "evaluation")
     workflow.add_edge("evaluation", END)
 
     return workflow.compile()

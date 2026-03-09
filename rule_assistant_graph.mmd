@@ -1,0 +1,23 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	greet(greet)
+	ask_type(ask_type)
+	ask_field(ask_field)
+	confirm_deploy(confirm_deploy)
+	__end__([<p>__end__</p>]):::last
+	__start__ -.-> ask_field;
+	__start__ -.-> ask_type;
+	__start__ -.-> confirm_deploy;
+	__start__ -.-> greet;
+	ask_field --> __end__;
+	ask_type --> __end__;
+	confirm_deploy --> __end__;
+	greet --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

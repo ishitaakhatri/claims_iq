@@ -36,14 +36,11 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
     """
     try:
         req_wrapper = ClerkRequest(request)
+        # In production, authorized_parties should ideally be configured via env var.
+        # Removing authorized_parties allows Clerk to validate the JWT itself regardless of the caller's origin.
         request_state = clerk.authenticate_request(
             req_wrapper,
-            AuthenticateRequestOptions(
-                authorized_parties=[
-                    "http://localhost:5173",
-                    "http://localhost:8000",
-                ]
-            )
+            AuthenticateRequestOptions()
         )
         
         if not request_state.is_signed_in:

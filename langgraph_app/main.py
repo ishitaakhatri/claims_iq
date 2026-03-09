@@ -1,11 +1,14 @@
 import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from .graph.graph import app_graph
+from .graph.graph import create_graph
 from .services.blob_storage import upload_to_blob
 from .services.database import (
     save_claim_to_db, get_claims_history, backfill_orphaned_claims,
@@ -13,10 +16,7 @@ from .services.database import (
 )
 from .auth import get_current_user
 from .graph.rule_assistant import rule_assistant_app
-from dotenv import load_dotenv
 import json
-
-load_dotenv(override=True)
 
 app = FastAPI(title="ClaimsIQ LangGraph API")
 
@@ -209,6 +209,12 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
         "error": None
     }
     
+    # Fetch active rules dynamically
+    all_rules = get_all_rules()
+    active_rules = [rule for rule in all_rules if rule.get("is_active", True)]
+    app_graph = create_graph(active_rules)
+    expected_nodes = ["ocr", "extraction", "evaluation"] + [r["id"].lower() for r in active_rules]
+    
     async def event_generator():
         state = initial_state.copy()
         try:
@@ -224,11 +230,11 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
                 # We identify nodes by 'on_chain_start' / 'on_chain_end' with names matching graph nodes
                 # or 'on_chat_model_start' etc. if we wanted deeper info.
                 # For basic node tracking:
-                if kind == "on_chain_start" and name in ["ocr", "extraction", "br001", "br002", "br003", "br004", "br005", "br006", "evaluation"]:
+                if kind == "on_chain_start" and name in expected_nodes:
                     yield f"data: {json.dumps({'node': name, 'status': 'started'})}\n\n"
                 
                 elif kind == "on_chain_end":
-                    if name in ["ocr", "extraction", "br001", "br002", "br003", "br004", "br005", "br006", "evaluation"]:
+                    if name in expected_nodes:
                         # When a node ends, we update our local state from its output
                         output = event.get("data", {}).get("output")
                         if isinstance(output, dict):

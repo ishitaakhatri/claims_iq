@@ -1,7 +1,7 @@
 langgraph
 langchain-openai
 fastapi
-uvicorn
+uvicorn[standard]
 azure-ai-formrecognizer
 python-dotenv
 pydantic

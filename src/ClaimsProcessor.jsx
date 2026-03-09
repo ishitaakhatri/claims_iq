@@ -6,27 +6,22 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import logoImg from "./logo.png";
 
 // ─── Business Rules Engine ────────────────────────────────────────────────────
-const BUSINESS_RULES = [
-  { id: "BR001", name: "Claim Amount Threshold", description: "Claims ≤ $5,000 auto-approved", field: "claimAmount", operator: "lte", value: 5000, weight: 30, hasThreshold: true, min: 1000, max: 50000, step: 1000 },
-  { id: "BR002", name: "High-Value Escalation", description: "Claims > $25,000 require senior review", field: "claimAmount", operator: "lte", value: 25000, weight: 40, hasThreshold: true, min: 5000, max: 100000, step: 5000 },
-  { id: "BR003", name: "Document Completeness", description: "All required fields must be present", field: "completeness", operator: "gte", value: 80, weight: 25, hasThreshold: true, min: 50, max: 100, step: 5 },
-  { id: "BR004", name: "Fraud Indicators", description: "No fraud flags detected", field: "fraudScore", operator: "lte", value: 30, weight: 50, hasThreshold: true, min: 0, max: 100, step: 5 },
-  { id: "BR005", name: "Policy Active Status", description: "Policy must be active at time of claim", field: "policyStatus", operator: "eq", value: "active", weight: 35 },
-  { id: "BR006", name: "Duplicate Claim Check", description: "No duplicate claim reference found", field: "isDuplicate", operator: "eq", value: false, weight: 45 },
-];
-
-const NODE_MESSAGES = {
+// Base messages for fixed processing nodes; rule messages are generated dynamically
+const BASE_NODE_MESSAGES = {
   "start": "Initializing Agentic Engine",
   "ocr": "Scanning document",
   "extraction": "Extracting data fields",
-  "br001": "Checking Claim Amount Threshold",
-  "br002": "Evaluating High-Value Escalation",
-  "br003": "Validating Document Completeness",
-  "br004": "Analyzing Fraud Indicators",
-  "br005": "Verifying Policy Active Status",
-  "br006": "Running Duplicate Claim Check",
   "evaluation": "Finalizing Routing Decision"
 };
+
+// Generate node messages dynamically from active rules
+function buildNodeMessages(rules) {
+  const messages = { ...BASE_NODE_MESSAGES };
+  (rules || []).forEach(rule => {
+    messages[rule.id.toLowerCase()] = `Checking ${rule.name}`;
+  });
+  return messages;
+}
 
 
 
@@ -193,13 +188,10 @@ export default function ClaimsProcessor() {
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailTab, setDetailTab] = useState("rules");
   const [processingLogs, setProcessingLogs] = useState([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [activeRules, setActiveRules] = useState([]);
 
-  const [ruleConfig, setRuleConfig] = useState(
-    BUSINESS_RULES.reduce((acc, rule) => ({
-      ...acc,
-      [rule.id]: { enabled: true, threshold: rule.value }
-    }), {})
-  );
+  const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
 
 
@@ -213,6 +205,36 @@ export default function ClaimsProcessor() {
     setProcessingLogs([]);
 
     try {
+      const token = await getToken();
+
+      // Refresh rules from DB before processing to get latest enabled/disabled states
+      const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+      let latestConfig = ruleConfig;
+      let latestRules = activeRules;
+      try {
+        const rulesRes = await fetch(`${apiUrl}/rules`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const rulesData = await rulesRes.json();
+        if (rulesData.status === "success" && rulesData.rules) {
+          latestRules = rulesData.rules;
+          setActiveRules(latestRules);
+          const freshConfig = {};
+          latestRules.forEach(rule => {
+            if (rule.is_active) {
+              freshConfig[rule.id] = { enabled: true, threshold: rule.config?.value || 0 };
+            }
+          });
+          setRuleConfig(freshConfig);
+          latestConfig = freshConfig;
+        }
+      } catch (err) {
+        console.warn("⚠️ [Process] Could not refresh rules, using cached config:", err);
+      }
+
+      // Build dynamic node messages from latest active rules
+      const currentNodeMessages = buildNodeMessages(latestRules.filter(r => r.is_active));
+
       console.log("📥 [Process] Converting file to base64...");
       const b64 = await fileToBase64(f);
       console.log("📥 [Process] Base64 conversion complete. Length:", b64.length);
@@ -222,7 +244,7 @@ export default function ClaimsProcessor() {
       const onLog = (data) => {
         const { node, status } = data;
         setProcessingLogs(prev => {
-          const message = NODE_MESSAGES[node] || `Processing ${node}...`;
+          const message = currentNodeMessages[node] || `Processing ${node}...`;
           const existingIndex = prev.findIndex(l => l.node === node);
 
           if (existingIndex >= 0) {
@@ -244,8 +266,7 @@ export default function ClaimsProcessor() {
         });
       };
 
-      const token = await getToken();
-      const result = await processClaimWithLangGraph(b64, f.type, f.name, ruleConfig, onLog, token);
+      const result = await processClaimWithLangGraph(b64, f.type, f.name, latestConfig, onLog, token);
 
       if (!result) {
         throw new Error("No result received from processing engine.");
@@ -278,7 +299,7 @@ export default function ClaimsProcessor() {
       setError(e.message);
       setStage("error");
     }
-  }, [ruleConfig]);
+  }, [ruleConfig, activeRules, getToken]);
 
 
   const handleDrop = useCallback((e) => {
@@ -379,29 +400,54 @@ export default function ClaimsProcessor() {
   const [authMode, setAuthMode] = useState("sign-in");
 
 
-  // Fetch history after sign in
+  // Fetch history and active rules after sign in
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      const fetchHistory = async () => {
+      const fetchData = async () => {
+        setIsHistoryLoading(true);
         const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
 
         try {
           const token = await getToken();
-          const historyRes = await fetch(`${apiUrl}/claims-history`, {
-            headers: {
-              "Authorization": `Bearer ${token}`
-            }
-          });
-          const historyData = await historyRes.json();
+
+          // Fetch History
+          const historyPromise = fetch(`${apiUrl}/claims-history`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          }).then(res => res.json());
+
+          // Fetch Rules
+          const rulesPromise = fetch(`${apiUrl}/rules`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          }).then(res => res.json());
+
+          const [historyData, rulesData] = await Promise.all([historyPromise, rulesPromise]);
+
           if (historyData.status === "success" && historyData.history) {
             console.log(`✅ [History] Fetched ${historyData.history.length} claims from DB`);
             setClaimsLog(historyData.history);
           }
+
+          if (rulesData.status === "success" && rulesData.rules) {
+            const fetchedRules = rulesData.rules;
+            setActiveRules(fetchedRules);
+
+            // Initialize ruleConfig with fetched rules
+            const initialConfig = {};
+            fetchedRules.forEach(rule => {
+              if (rule.is_active) {
+                initialConfig[rule.id] = { enabled: true, threshold: rule.config?.value || 0 };
+              }
+            });
+            setRuleConfig(initialConfig);
+          }
+
         } catch (err) {
-          console.error("❌ [History] Error:", err);
+          console.error("❌ [Fetch Data] Error:", err);
+        } finally {
+          setIsHistoryLoading(false);
         }
       };
-      fetchHistory();
+      fetchData();
     }
   }, [isLoaded, isSignedIn, getToken]);
 
@@ -502,78 +548,82 @@ export default function ClaimsProcessor() {
                 <>
                   {/* Upload Zone */}
                   {stage === "idle" || stage === "error" ? (
-                    <div
-                      onClick={() => fileRef.current?.click()}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
-                      onDrop={handleDrop}
-                      style={{
-                        border: `2px dashed ${dragOver ? colors.accent : colors.border}`,
-                        borderRadius: 20, padding: "140px 40px", textAlign: "center", cursor: "pointer",
-                        background: dragOver ? "rgba(245, 158, 11, 0.08)" : "rgba(17, 24, 39, 0.6)",
-                        backdropFilter: dragOver ? "blur(8px)" : "blur(4px)",
-                        transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)", marginBottom: 24,
-                        minHeight: "520px", display: "flex", flexDirection: "column",
-                        alignItems: "center", justifyContent: "center",
-                        boxShadow: dragOver
-                          ? `0 0 60px ${colors.accent}33, inset 0 0 40px ${colors.accent}11`
-                          : "0 8px 32px rgba(0, 0, 0, 0.3)",
-                        animation: "slideIn 0.5s ease-out",
-                        transform: dragOver ? "scale(1.01)" : "scale(1)"
-                      }}
-                    >
-                      <div style={{
-                        marginBottom: 24,
-                        filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))",
-                        transition: "all 0.3s ease",
-                        transform: dragOver ? "scale(1.1)" : "scale(1)"
-                      }}>
-                        <img
-                          src="/document_icon.jpg"
-                          alt="document"
-                          style={{
-                            width: 140,
-                            height: "auto",
-                            opacity: dragOver ? 1 : 0.9,
-                            transition: "all 0.3s ease"
-                          }}
-                        />
-                      </div>
-                      <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em", color: colors.text }}>
-                        Drop your claims document
-                      </div>
-                      <div style={{ fontSize: 15, color: colors.muted, marginBottom: 20, maxWidth: 480, lineHeight: 1.5 }}>
-                        Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
-                      </div>
-                      <div style={{
-                        display: "inline-block", padding: "12px 32px",
-                        background: `linear-gradient(135deg, ${colors.accent}, #f9a825)`,
-                        color: "#000", borderRadius: 10,
-                        fontWeight: 700, fontSize: 15, cursor: "pointer",
-                        transition: "all 0.3s ease",
-                        boxShadow: "0 4px 16px rgba(245, 158, 11, 0.3)",
-                        border: "2px solid transparent",
-                        transform: dragOver ? "translateY(-2px)" : "translateY(0)"
-                      }}>
-                        Browse Files
-                      </div>
-                      {stage === "error" && (
+                    <>
+                      <div
+                        onClick={() => fileRef.current?.click()}
+                        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
+                        onDrop={handleDrop}
+                        style={{
+                          border: `2px dashed ${dragOver ? colors.accent : colors.border}`,
+                          borderRadius: 20, padding: "140px 40px", textAlign: "center", cursor: "pointer",
+                          background: dragOver ? "rgba(245, 158, 11, 0.08)" : "rgba(17, 24, 39, 0.6)",
+                          backdropFilter: dragOver ? "blur(8px)" : "blur(4px)",
+                          transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)", marginBottom: 24,
+                          minHeight: "520px", display: "flex", flexDirection: "column",
+                          alignItems: "center", justifyContent: "center",
+                          boxShadow: dragOver
+                            ? `0 0 60px ${colors.accent}33, inset 0 0 40px ${colors.accent}11`
+                            : "0 8px 32px rgba(0, 0, 0, 0.3)",
+                          animation: "slideIn 0.5s ease-out",
+                          transform: dragOver ? "scale(1.01)" : "scale(1)"
+                        }}
+                      >
                         <div style={{
-                          marginTop: 24, padding: "12px 16px",
-                          background: "rgba(244, 63, 94, 0.1)",
-                          border: "1px solid #f87171",
-                          borderRadius: 10,
-                          color: "#fca5a5",
-                          fontSize: 13,
-                          backdropFilter: "blur(4px)",
-                          animation: "slideIn 0.3s ease"
+                          marginBottom: 24,
+                          filter: dragOver ? "drop-shadow(0 4px 16px rgba(245, 158, 11, 0.4))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.3))",
+                          transition: "all 0.3s ease",
+                          transform: dragOver ? "scale(1.1)" : "scale(1)"
                         }}>
-                          ⚠ Error: {error}
+                          <img
+                            src="/document_icon.jpg"
+                            alt="document"
+                            style={{
+                              width: 140,
+                              height: "auto",
+                              opacity: dragOver ? 1 : 0.9,
+                              transition: "all 0.3s ease"
+                            }}
+                          />
                         </div>
-                      )}
-                      <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.tiff,.tif" onChange={handleFile} style={{ display: "none" }} />
-                    </div>
+                        <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em", color: colors.text }}>
+                          Drop your claims document
+                        </div>
+                        <div style={{ fontSize: 15, color: colors.muted, marginBottom: 20, maxWidth: 480, lineHeight: 1.5 }}>
+                          Supports PDF, Word (.docx), PNG, JPG, JPEG, TIFF
+                        </div>
+                        <div style={{
+                          display: "inline-block", padding: "12px 32px",
+                          background: `linear-gradient(135deg, ${colors.accent}, #f9a825)`,
+                          color: "#000", borderRadius: 10,
+                          fontWeight: 700, fontSize: 15, cursor: "pointer",
+                          transition: "all 0.3s ease",
+                          boxShadow: "0 4px 16px rgba(245, 158, 11, 0.3)",
+                          border: "2px solid transparent",
+                          transform: dragOver ? "translateY(-2px)" : "translateY(0)"
+                        }}>
+                          Browse Files
+                        </div>
+                        {stage === "error" && (
+                          <div style={{
+                            marginTop: 24, padding: "12px 16px",
+                            background: "rgba(244, 63, 94, 0.1)",
+                            border: "1px solid #f87171",
+                            borderRadius: 10,
+                            color: "#fca5a5",
+                            fontSize: 13,
+                            backdropFilter: "blur(4px)",
+                            animation: "slideIn 0.3s ease"
+                          }}>
+                            ⚠ Error: {error}
+                          </div>
+                        )}
+                        <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.tiff,.tif" onChange={handleFile} style={{ display: "none" }} />
+                      </div>
+
+                      {/* Rule Selection Section Removed as per request */}
+                    </>
                   ) : stage === "processing" ? (
                     <div style={{
                       border: `1px solid ${colors.border}`, borderRadius: 16, padding: "40px 24px",
@@ -1189,9 +1239,14 @@ export default function ClaimsProcessor() {
                 {/* Processing Log */}
                 <div>
                   <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.1em", marginBottom: 12 }}>
-                    📋 PROCESSING LOG {claimsLog.length > 0 && `(${claimsLog.length})`}
+                    📋 PROCESSING LOG {claimsLog.length > 0 && !isHistoryLoading ? `(${claimsLog.length})` : ""}
                   </div>
-                  {claimsLog.length === 0 ? (
+                  {isHistoryLoading ? (
+                    <div style={{ padding: "30px 0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "fadeIn 0.3s ease" }}>
+                      <div style={{ width: 28, height: 28, border: `2px solid ${colors.dim}`, borderTopColor: colors.accent, borderRadius: "50%", animation: "spin 0.9s linear infinite", marginBottom: 12 }} />
+                      <div style={{ fontSize: 12, color: colors.muted, fontStyle: "italic" }}>loading your past fetched documents...</div>
+                    </div>
+                  ) : claimsLog.length === 0 ? (
                     <div style={{ fontSize: 12, color: colors.muted, fontStyle: "italic", padding: "10px 0" }}>No claims processed yet</div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1245,7 +1300,7 @@ export default function ClaimsProcessor() {
             )}
           </div>
         </div>
-      </SignedIn>
+      </SignedIn >
 
       {/* ── Claim History Detail Modal ── */}
       {
@@ -1740,7 +1795,8 @@ export default function ClaimsProcessor() {
               </div>
             </div>
           </div>
-        )}
+        )
+      }
     </>
   );
 }

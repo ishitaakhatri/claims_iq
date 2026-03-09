@@ -7,7 +7,7 @@ const RULE_TYPES = [
         name: 'Threshold Rule',
         description: 'Compares a numeric field against a specific value (e.g., Amount ≤ $5000).',
         fields: ['field_name', 'operator', 'value'],
-        operators: ['lte', 'lt', 'gte', 'gt', 'eq'],
+        operators: ['lte', 'lt', 'gte', 'gt'],
         exampleFields: ['claimAmount', 'completeness', 'fraudScore', 'claimNumber', 'policyNumber', 'claimantName', 'claimantId', 'claimType', 'policyStatus', 'incidentDate', 'filingDate', 'providerName', 'contactNumber']
     },
     {
@@ -34,9 +34,31 @@ const OP_LABELS = {
     lte: '≤', lt: '<', gte: '≥', gt: '>', eq: '=', not_duplicate: 'NOT DUPLICATE'
 };
 
+// Simple markdown-to-HTML renderer for chat messages
+function renderMarkdown(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^(\s*)• /gm, '$1<span style="color:#f59e0b">•</span> ')
+        .replace(/^(\s*)✅/gm, '$1<span style="color:#10b981">✅</span>')
+        .replace(/^(\s*)⚠️/gm, '$1<span style="color:#f59e0b">⚠️</span>')
+        .replace(/^(\s*)🔍/gm, '$1<span style="color:#93c5fd">🔍</span>')
+        .replace(/^(\s*)📋/gm, '$1<span style="color:#f59e0b">📋</span>')
+        .replace(/^(\s*)📝/gm, '$1<span style="color:#93c5fd">📝</span>')
+        .replace(/^(\s*)📊/gm, '$1<span style="color:#10b981">📊</span>')
+        .replace(/^(\s*)1️⃣/gm, '$1<span style="color:#f59e0b">1️⃣</span>')
+        .replace(/^(\s*)2️⃣/gm, '$1<span style="color:#f59e0b">2️⃣</span>')
+        .replace(/^(\s*)3️⃣/gm, '$1<span style="color:#f59e0b">3️⃣</span>')
+        .replace(/\n/g, '<br/>');
+}
+
 export default function RulesManagement({ colors, getToken }) {
     const [activeTab, setActiveTab] = useState('registry');
     const [rules, setRules] = useState([]);
+    const [deletingRuleId, setDeletingRuleId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -107,14 +129,21 @@ export default function RulesManagement({ colors, getToken }) {
 
     const deleteRuleById = async (id) => {
         try {
+            setDeletingRuleId(id);
             const token = await getToken();
-            await fetch(`${API_URL}/rules/${id}`, {
+            const fetchPromise = fetch(`${API_URL}/rules/${id}`, {
                 method: "DELETE",
                 headers: { "Authorization": `Bearer ${token}` }
             });
+            // Ensure the deleting state is shown for at least 2.5 seconds
+            const delayPromise = new Promise(res => setTimeout(res, 2500));
+            await Promise.all([fetchPromise, delayPromise]);
+
             setRules(prev => prev.filter(r => r.id !== id));
         } catch (err) {
             console.error("❌ [Rules] Error deleting:", err);
+        } finally {
+            setDeletingRuleId(null);
         }
     };
 
@@ -361,15 +390,22 @@ export default function RulesManagement({ colors, getToken }) {
                                                     </div>
 
                                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                                                        <button
-                                                            onClick={() => deleteRuleById(rule.id)}
-                                                            style={{
-                                                                background: 'none', border: 'none', color: '#ef4444',
-                                                                fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
-                                                            }}
-                                                            onMouseEnter={(e) => e.target.style.opacity = 1}
-                                                            onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                                        >🗑️</button>
+                                                        {deletingRuleId === rule.id ? (
+                                                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#ef4444", fontSize: 12, fontWeight: 800 }}>
+                                                                <div style={{ width: 14, height: 14, border: `2px solid rgba(239, 68, 68, 0.3)`, borderTopColor: "#ef4444", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                                                DELETING...
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => deleteRuleById(rule.id)}
+                                                                style={{
+                                                                    background: 'none', border: 'none', color: '#ef4444',
+                                                                    fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
+                                                                }}
+                                                                onMouseEnter={(e) => e.target.style.opacity = 1}
+                                                                onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                                                            >🗑️</button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -523,13 +559,6 @@ export default function RulesManagement({ colors, getToken }) {
                                                 transition: 'all 0.3s ease'
                                             }}
                                         >{saving ? 'DEPLOYING...' : 'DEPLOY RULE'}</button>
-                                        <button
-                                            onClick={() => setSelectedType(null)}
-                                            style={{
-                                                padding: '0 24px', background: 'transparent', color: colors.muted,
-                                                border: `1px solid ${colors.border}`, borderRadius: 10, fontWeight: 700, cursor: 'pointer'
-                                            }}
-                                        >CANCEL</button>
                                     </div>
                                 </div>
                             )}
@@ -580,8 +609,10 @@ export default function RulesManagement({ colors, getToken }) {
                                         boxShadow: m.role === 'user' ? `0 4px 15px ${colors.accent}33` : 'none',
                                         border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
                                         whiteSpace: 'pre-wrap'
-                                    }}>
-                                        {m.content}
+                                    }}
+                                        dangerouslySetInnerHTML={m.role === 'ai' ? { __html: renderMarkdown(m.content) } : undefined}
+                                    >
+                                        {m.role === 'user' ? m.content : null}
                                     </div>
                                     <div style={{ fontSize: 10, color: colors.muted, marginTop: 4, fontFamily: 'IBM Plex Mono' }}>
                                         {m.role === 'user' ? 'YOU' : '🤖 AI ASSISTANT'}

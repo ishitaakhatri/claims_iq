@@ -3,98 +3,6 @@ from ..tools.tools import call_azure_layout, call_openai_extraction
 from ..services.database import check_duplicate_claim
 import asyncio
 # ─── Business Rules Engine ────────────────────────────────────────────────────
-BUSINESS_RULES = [
-    {
-      "id": "BR001",
-      "name": "Claim Amount Threshold",
-      "description": "Claims ≤ $5,000 auto-approved",
-      "rule_type": "threshold",
-      "weight": 30,
-      "priority": 1,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "claimAmount",
-        "operator": "lte",
-        "value": 5000
-      }
-    },
-    {
-      "id": "BR002",
-      "name": "High-Value Escalation",
-      "description": "Claims > $25,000 require senior review",
-      "rule_type": "threshold",
-      "weight": 40,
-      "priority": 2,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "claimAmount",
-        "operator": "lte", # Using LTE 25000 for "Passed" status (No Escalation)
-        "value": 25000
-      }
-    },
-    {
-      "id": "BR003",
-      "name": "Document Completeness",
-      "description": "All required fields must be present (Min 80%)",
-      "rule_type": "threshold",
-      "weight": 25,
-      "priority": 3,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "completeness",
-        "operator": "gte",
-        "value": 80
-      }
-    },
-    {
-      "id": "BR004",
-      "name": "Fraud Indicators",
-      "description": "No fraud flags detected (Threshold ≤ 30)",
-      "rule_type": "threshold",
-      "weight": 50,
-      "priority": 4,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "fraudScore",
-        "operator": "lte",
-        "value": 30
-      }
-    },
-    {
-      "id": "BR005",
-      "name": "Policy Active Status",
-      "description": "Policy must be active at time of claim",
-      "rule_type": "comparison",
-      "weight": 35,
-      "priority": 5,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "policyStatus",
-        "operator": "eq",
-        "value": "active"
-      }
-    },
-    {
-      "id": "BR006",
-      "name": "Duplicate Claim Check",
-      "description": "No duplicate claim reference found",
-      "rule_type": "cross_field",
-      "weight": 45,
-      "priority": 6,
-      "version": 1,
-      "is_active": True,
-      "config": {
-        "field_name": "claimNumber",
-        "operator": "not_duplicate"
-      }
-    }
-]
-
 # Duplicate check is now handled via database
 
 def update_rule_description(rule: dict) -> str:
@@ -192,11 +100,9 @@ def create_rule_node(base_rule: dict):
         rule = base_rule.copy()
         extracted_data = state["extracted_data"].copy()
         
-        # Merge runtime configuration if present
+        # Merge runtime configuration if present (threshold overrides only)
+        # Note: enabled/disabled is handled at graph construction time in main.py
         config_override = (state.get("rule_config") or {}).get(rule_id, {})
-        if not config_override.get("enabled", True):
-            return {"rule_results": [{**rule, "status": "SKIPPED", "passed": True}]}
-            
         if "threshold" in config_override:
             rule["config"]["value"] = config_override["threshold"]
             rule["description"] = update_rule_description(rule)

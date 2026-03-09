@@ -4,13 +4,12 @@ from .nodes import (
     ocr_node, 
     extraction_node, 
     create_rule_node,
-    evaluation_node,
-    BUSINESS_RULES
+    evaluation_node
 )
 
-def create_graph():
+def create_graph(active_rules: list):
     """
-    Creates the claims processing state graph.
+    Creates the claims processing state graph dynamically based on active rules.
     """
     workflow = StateGraph(ClaimsState)
 
@@ -19,7 +18,7 @@ def create_graph():
     workflow.add_node("extraction", extraction_node)
     
     # Adding rule nodes
-    for rule in BUSINESS_RULES:
+    for rule in active_rules:
         node_id = rule["id"].lower()
         workflow.add_node(node_id, create_rule_node(rule))
     
@@ -31,7 +30,7 @@ def create_graph():
     
     # Sequential Rule Engine
     last_node = "extraction"
-    for rule in BUSINESS_RULES:
+    for rule in active_rules:
         node_id = rule["id"].lower()
         workflow.add_edge(last_node, node_id)
         last_node = node_id
@@ -40,6 +39,3 @@ def create_graph():
     workflow.add_edge("evaluation", END)
 
     return workflow.compile()
-
-# Creating a shared graph instance
-app_graph = create_graph()

@@ -12,7 +12,9 @@ from .graph.graph import create_graph
 from .services.blob_storage import upload_to_blob
 from .services.database import (
     save_claim_to_db, get_claims_history, backfill_orphaned_claims,
-    get_all_rules, upsert_rule, delete_rule
+    get_all_rules, upsert_rule, delete_rule,
+    register_session, check_active_session, terminate_session,
+    delete_claim
 )
 from .auth import get_current_user
 from .graph.rule_assistant import rule_assistant_app
@@ -49,6 +51,9 @@ class ChatMessage(BaseModel):
     message: str
     context: Optional[dict] = None
 
+class SessionRequest(BaseModel):
+    session_token: str
+
 @app.get("/claims-history")
 async def claims_history(user_info: dict = Depends(get_current_user)):
     """
@@ -62,6 +67,58 @@ async def claims_history(user_info: dict = Depends(get_current_user)):
         return {"status": "success", "history": history}
     except Exception as e:
         print(f"[API] History Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/claims-history/{claim_id}")
+async def remove_claim(claim_id: str, user_info: dict = Depends(get_current_user)):
+    """Delete a single claim from claims history."""
+    try:
+        is_admin = (user_info.get("role") == "admin")
+        deleted = delete_claim(claim_id, user_info.get("id"), is_admin)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Claim not found or access denied")
+        return {"status": "success", "deleted": claim_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Claim Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Session Management ───────────────────────────────────────────────────────
+
+@app.post("/session/check")
+async def session_check(request: SessionRequest, user_info: dict = Depends(get_current_user)):
+    """Check if another active session exists for this user."""
+    try:
+        result = check_active_session(user_info.get("id"), request.session_token)
+        return {"status": "success", **result}
+    except Exception as e:
+        print(f"[API] Session Check Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/session/register")
+async def session_register(request: SessionRequest, user_info: dict = Depends(get_current_user)):
+    """Register a new active session for the current user."""
+    try:
+        success = register_session(user_info.get("id"), request.session_token)
+        return {"status": "success" if success else "error"}
+    except Exception as e:
+        print(f"[API] Session Register Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/session/terminate")
+async def session_terminate(request: SessionRequest, user_info: dict = Depends(get_current_user)):
+    """Terminate existing sessions and register a new one (force login)."""
+    try:
+        terminate_session(user_info.get("id"))
+        register_session(user_info.get("id"), request.session_token)
+        return {"status": "success"}
+    except Exception as e:
+        print(f"[API] Session Terminate Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

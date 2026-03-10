@@ -190,9 +190,71 @@ export default function ClaimsProcessor() {
   const [processingLogs, setProcessingLogs] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [activeRules, setActiveRules] = useState([]);
+  const [sessionConflict, setSessionConflict] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // claim id to confirm delete
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
+
+  // Generate or retrieve a unique session token for this browser tab
+  const getSessionToken = () => {
+    let token = sessionStorage.getItem('claimsiq_session_token');
+    if (!token) {
+      token = crypto.randomUUID();
+      sessionStorage.setItem('claimsiq_session_token', token);
+    }
+    return token;
+  };
+
+  // Delete a claim from history
+  const handleDeleteClaim = async (claimId) => {
+    setDeleteLoading(true);
+    try {
+      const token = await getToken();
+      const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+      const res = await fetch(`${apiUrl}/claims-history/${claimId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setClaimsLog(prev => prev.filter(c => c.id !== claimId));
+        if (selectedLog?.id === claimId) setSelectedLog(null);
+        console.log(`🗑️ [Delete] Claim ${claimId} deleted`);
+      } else {
+        console.error("❌ [Delete] Failed to delete claim");
+      }
+    } catch (err) {
+      console.error("❌ [Delete] Error:", err);
+    } finally {
+      setDeleteLoading(false);
+      setDeleteConfirm(null);
+    }
+  };
+
+  // Force terminate other session and login
+  const handleForceLogin = async () => {
+    setSessionLoading(true);
+    try {
+      const token = await getToken();
+      const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+      const sessionToken = getSessionToken();
+      await fetch(`${apiUrl}/session/terminate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ session_token: sessionToken })
+      });
+      setSessionConflict(false);
+    } catch (err) {
+      console.error("❌ [Session] Force login error:", err);
+    } finally {
+      setSessionLoading(false);
+    }
+  };
 
 
   const process = useCallback(async (f) => {
@@ -400,7 +462,7 @@ export default function ClaimsProcessor() {
   const [authMode, setAuthMode] = useState("sign-in");
 
 
-  // Fetch history and active rules after sign in
+  // Fetch history and active rules after sign in (with session check)
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       const fetchData = async () => {
@@ -409,13 +471,48 @@ export default function ClaimsProcessor() {
 
         try {
           const token = await getToken();
+          const sessionToken = getSessionToken();
 
-          // Fetch History
+          // Step 1: Check for active session conflict
+          try {
+            const sessionRes = await fetch(`${apiUrl}/session/check`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({ session_token: sessionToken })
+            });
+            const sessionData = await sessionRes.json();
+            if (sessionData.conflict) {
+              console.warn("⚠️ [Session] Active session conflict detected!");
+              setSessionConflict(true);
+              setIsHistoryLoading(false);
+              return; // Don't load dashboard — show conflict UI
+            }
+          } catch (sessionErr) {
+            console.warn("⚠️ [Session] Could not check session, proceeding:", sessionErr);
+          }
+
+          // Step 2: Register this session
+          try {
+            await fetch(`${apiUrl}/session/register`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({ session_token: sessionToken })
+            });
+          } catch (regErr) {
+            console.warn("⚠️ [Session] Could not register session:", regErr);
+          }
+
+          // Step 3: Fetch History & Rules
           const historyPromise = fetch(`${apiUrl}/claims-history`, {
             headers: { "Authorization": `Bearer ${token}` }
           }).then(res => res.json());
 
-          // Fetch Rules
           const rulesPromise = fetch(`${apiUrl}/rules`, {
             headers: { "Authorization": `Bearer ${token}` }
           }).then(res => res.json());
@@ -431,7 +528,6 @@ export default function ClaimsProcessor() {
             const fetchedRules = rulesData.rules;
             setActiveRules(fetchedRules);
 
-            // Initialize ruleConfig with fetched rules
             const initialConfig = {};
             fetchedRules.forEach(rule => {
               if (rule.is_active) {
@@ -449,7 +545,7 @@ export default function ClaimsProcessor() {
       };
       fetchData();
     }
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, sessionConflict, getToken]);
 
   return (
     <>
@@ -460,6 +556,167 @@ export default function ClaimsProcessor() {
 
       {/* Show dashboard if user is signed in */}
       <SignedIn>
+
+        {/* ── Session Conflict Overlay ── */}
+        {sessionConflict && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(3, 7, 18, 0.97)",
+            backdropFilter: "blur(12px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "'Barlow', sans-serif",
+            animation: "fadeIn 0.4s ease"
+          }}>
+            <div style={{
+              textAlign: "center", maxWidth: 520, padding: "48px 40px",
+              background: "rgba(17, 24, 39, 0.95)",
+              border: "2px solid rgba(239, 68, 68, 0.4)",
+              borderRadius: 20,
+              boxShadow: "0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(239, 68, 68, 0.1)",
+              animation: "slideIn 0.5s ease"
+            }}>
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.12)",
+                border: "2px solid rgba(239, 68, 68, 0.4)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                margin: "0 auto 24px", fontSize: 32
+              }}>⚠️</div>
+              <h2 style={{
+                fontSize: 22, fontWeight: 800, color: "#f87171",
+                marginBottom: 12, letterSpacing: "-0.02em"
+              }}>Active Session Detected</h2>
+              <p style={{
+                fontSize: 15, color: "#9ca3af", lineHeight: 1.7,
+                marginBottom: 32, maxWidth: 400, margin: "0 auto 32px"
+              }}>
+                Someone else is already signed in with this username on another device or browser.
+              </p>
+              <button
+                onClick={handleForceLogin}
+                disabled={sessionLoading}
+                style={{
+                  padding: "14px 32px",
+                  background: sessionLoading
+                    ? "rgba(239, 68, 68, 0.3)"
+                    : "linear-gradient(135deg, #ef4444, #dc2626)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 12,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: sessionLoading ? "wait" : "pointer",
+                  fontFamily: "'Barlow', sans-serif",
+                  transition: "all 0.3s ease",
+                  boxShadow: "0 8px 24px rgba(239, 68, 68, 0.3)",
+                  display: "inline-flex", alignItems: "center", gap: 10
+                }}
+                onMouseEnter={(e) => {
+                  if (!sessionLoading) {
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow = "0 12px 32px rgba(239, 68, 68, 0.4)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 8px 24px rgba(239, 68, 68, 0.3)";
+                }}
+              >
+                {sessionLoading ? (
+                  <>
+                    <span style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></span>
+                    Terminating...
+                  </>
+                ) : (
+                  "🔄 Terminate session and login"
+                )}
+              </button>
+              <p style={{ fontSize: 11, color: "#6b7280", marginTop: 20, fontFamily: "IBM Plex Mono" }}>
+                This will end the other session immediately.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Delete Confirmation Dialog ── */}
+        {deleteConfirm && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 9998,
+            background: "rgba(0, 0, 0, 0.6)",
+            backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "fadeIn 0.2s ease"
+          }}
+            onClick={() => setDeleteConfirm(null)}
+          >
+            <div style={{
+              background: "#111827",
+              border: "1px solid #374151",
+              borderRadius: 16,
+              padding: "32px 36px",
+              maxWidth: 420,
+              textAlign: "center",
+              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.5)",
+              animation: "slideIn 0.3s ease"
+            }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: 36, marginBottom: 16 }}>🗑️</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#f9fafb", marginBottom: 8 }}>Delete Processing Log?</h3>
+              <p style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.6, marginBottom: 24 }}>
+                This will permanently remove this claim record from the database. This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  style={{
+                    padding: "10px 24px", background: "transparent",
+                    border: "1px solid #374151", borderRadius: 10,
+                    color: "#d1d5db", fontSize: 13, fontWeight: 600,
+                    cursor: "pointer", fontFamily: "'Barlow', sans-serif",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#6b7280"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#374151"; }}
+                >Cancel</button>
+                <button
+                  onClick={() => handleDeleteClaim(deleteConfirm)}
+                  disabled={deleteLoading}
+                  style={{
+                    padding: "10px 24px",
+                    background: deleteLoading ? "rgba(239, 68, 68, 0.4)" : "linear-gradient(135deg, #ef4444, #dc2626)",
+                    border: "none", borderRadius: 10,
+                    color: "#fff", fontSize: 13, fontWeight: 700,
+                    cursor: deleteLoading ? "wait" : "pointer",
+                    fontFamily: "'Barlow', sans-serif",
+                    transition: "all 0.2s ease",
+                    boxShadow: "0 4px 16px rgba(239, 68, 68, 0.3)",
+                    display: "inline-flex", alignItems: "center", gap: 8
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!deleteLoading) {
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                      e.currentTarget.style.boxShadow = "0 6px 20px rgba(239, 68, 68, 0.4)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 4px 16px rgba(239, 68, 68, 0.3)";
+                  }}
+                >
+                  {deleteLoading ? (
+                    <>
+                      <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></span>
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ fontFamily: "'Barlow', sans-serif", background: colors.bg, minHeight: "100vh", color: colors.text }}>
 
@@ -1261,7 +1518,8 @@ export default function ClaimsProcessor() {
                           animation: "slideIn 0.3s ease",
                           transition: "all 0.2s ease",
                           cursor: "pointer",
-                          boxShadow: selectedLog?.id === c.id ? `0 0 16px ${colors.accent}44` : "0 2px 6px rgba(0, 0, 0, 0.2)"
+                          boxShadow: selectedLog?.id === c.id ? `0 0 16px ${colors.accent}44` : "0 2px 6px rgba(0, 0, 0, 0.2)",
+                          position: "relative"
                         }}
                           onClick={() => setSelectedLog(c)}
                           onMouseEnter={(e) => {
@@ -1269,13 +1527,42 @@ export default function ClaimsProcessor() {
                               e.currentTarget.style.transform = "translateX(4px)";
                               e.currentTarget.style.boxShadow = `0 4px 12px ${c.routing === "STP" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`;
                             }
+                            e.currentTarget.querySelector('.delete-btn').style.opacity = '1';
                           }}
                           onMouseLeave={(e) => {
                             if (selectedLog?.id !== c.id) {
                               e.currentTarget.style.transform = "translateX(0)";
                               e.currentTarget.style.boxShadow = "0 2px 6px rgba(0, 0, 0, 0.2)";
                             }
+                            e.currentTarget.querySelector('.delete-btn').style.opacity = '0';
                           }}>
+                          {/* Delete button */}
+                          <button
+                            className="delete-btn"
+                            onClick={(e) => { e.stopPropagation(); setDeleteConfirm(c.id); }}
+                            style={{
+                              position: "absolute", bottom: 6, right: 6,
+                              width: 28, height: 28, borderRadius: 6,
+                              background: "rgba(239, 68, 68, 0.2)",
+                              border: "1px solid rgba(239, 68, 68, 0.4)",
+                              color: "#f87171", fontSize: 14,
+                              cursor: "pointer", display: "flex",
+                              alignItems: "center", justifyContent: "center",
+                              opacity: 0, transition: "all 0.2s ease",
+                              padding: 0, lineHeight: 1
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(239, 68, 68, 0.3)";
+                              e.currentTarget.style.borderColor = "#ef4444";
+                              e.currentTarget.style.transform = "scale(1.1)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)";
+                              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.3)";
+                              e.currentTarget.style.transform = "scale(1)";
+                            }}
+                            title="Delete this log entry"
+                          >🗑</button>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                             <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                               {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}

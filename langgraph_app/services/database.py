@@ -473,3 +473,155 @@ def delete_rule(rule_id: str) -> bool:
     finally:
         if conn:
             conn.close()
+
+
+# ─── Active Sessions ──────────────────────────────────────────────────────────
+
+def ensure_sessions_table():
+    """Creates the active_sessions table if it does not exist."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS active_sessions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL,
+                session_token VARCHAR(255) NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                last_active TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        print("[Database] active_sessions table ensured.")
+    except Exception as e:
+        print(f"[Database] Error ensuring sessions table: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def register_session(user_id: str, session_token: str) -> bool:
+    """
+    Registers a new session for the user, replacing any existing sessions.
+    Returns True on success.
+    """
+    ensure_sessions_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Remove old sessions for this user
+        cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
+        # Insert new session
+        cursor.execute(
+            "INSERT INTO active_sessions (user_id, session_token) VALUES (%s, %s)",
+            (user_id, session_token)
+        )
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Session registered for user: {user_id}")
+        return True
+    except Exception as e:
+        print(f"[Database] Error registering session: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+def check_active_session(user_id: str, session_token: str) -> dict:
+    """
+    Checks if another session exists for this user.
+    Returns {"conflict": True/False, "existing_token": ...}
+    """
+    ensure_sessions_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT session_token FROM active_sessions WHERE user_id = %s",
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+
+        if row is None:
+            # No active session — no conflict
+            return {"conflict": False}
+        
+        existing_token = row[0]
+        if existing_token == session_token:
+            # Same browser/tab — no conflict
+            return {"conflict": False}
+        
+        # Different session token — conflict!
+        return {"conflict": True}
+    except Exception as e:
+        print(f"[Database] Error checking session: {e}")
+        return {"conflict": False}  # fail-open to avoid locking users out
+    finally:
+        if conn:
+            conn.close()
+
+
+def terminate_session(user_id: str) -> bool:
+    """Terminates all active sessions for a user."""
+    ensure_sessions_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Terminated sessions for user: {user_id}")
+        return True
+    except Exception as e:
+        print(f"[Database] Error terminating session: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+# ─── Claim Deletion ───────────────────────────────────────────────────────────
+
+def delete_claim(claim_id: str, user_id: str, is_admin: bool = False) -> bool:
+    """
+    Deletes a claim from claims_history.
+    Admins can delete any claim; regular users can only delete their own.
+    Returns True if a row was deleted.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if is_admin:
+            cursor.execute("DELETE FROM claims_history WHERE id = %s", (claim_id,))
+        else:
+            cursor.execute(
+                "DELETE FROM claims_history WHERE id = %s AND user_id = %s",
+                (claim_id, user_id)
+            )
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Deleted claim {claim_id}: {deleted}")
+        return deleted
+    except Exception as e:
+        print(f"[Database] Error deleting claim: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

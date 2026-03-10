@@ -109,8 +109,12 @@ def create_rule_node(base_rule: dict):
 
         # Handle Duplicate Check (BR006) specifically with Database
         if rule_id == "BR006":
-            current_claim_num = extracted_data.get("claimNumber")
-            is_duplicate = check_duplicate_claim(current_claim_num) if current_claim_num else False
+            policy_number = extracted_data.get("policyNumber")
+            claimant_id = extracted_data.get("claimantId")
+            incident_date = extracted_data.get("incidentDate")
+            provider = extracted_data.get("providerName")
+            
+            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
             extracted_data["isDuplicate"] = is_duplicate
 
         # Artificial delay for UI visibility

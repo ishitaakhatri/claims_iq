@@ -139,13 +139,31 @@ def get_user_by_clerk_id(clerk_id: str, email: str = "") -> dict:
         # Return fallback missing values to not break frontend explicitly immediately
         return {"id": None, "role": None}
 
-def check_duplicate_claim(claim_number: str) -> bool:
+def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str) -> bool:
     """
-    Checks if a claim with the given claim_number already exists in the claims_history table.
+    Checks if a claim with the given combination of policy number, claimant ID, 
+    incident date, and provider already exists in the claims_history table.
     Queries the extracted_data column (stored as JSON string).
+    If any of the fields are missing, it will only check against the fields that are present.
     """
-    if not claim_number:
-        print("[Database] Duplicate check skipped: no claim number provided")
+    fields_to_check = []
+    params = []
+    
+    if policy_number:
+        fields_to_check.append("(extracted_data::jsonb)->>'policyNumber' = %s")
+        params.append(policy_number)
+    if claimant_id:
+        fields_to_check.append("(extracted_data::jsonb)->>'claimantId' = %s")
+        params.append(claimant_id)
+    if incident_date:
+        fields_to_check.append("(extracted_data::jsonb)->>'incidentDate' = %s")
+        params.append(incident_date)
+    if provider:
+        fields_to_check.append("(extracted_data::jsonb)->>'providerName' = %s")
+        params.append(provider)
+        
+    if not fields_to_check:
+        print("[Database] Duplicate check skipped: no fields provided to check")
         return False
         
     conn = None
@@ -153,10 +171,11 @@ def check_duplicate_claim(claim_number: str) -> bool:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Use explicit cast to jsonb for reliable querying on varchar column
-        query = "SELECT COUNT(*) FROM claims_history WHERE (extracted_data::jsonb)->>'claimNumber' = %s"
-        print(f"[Database] Checking duplicate for claim number: '{claim_number}'")
-        cursor.execute(query, (claim_number,))
+        where_clause = " AND ".join(fields_to_check)
+        query = f"SELECT COUNT(*) FROM claims_history WHERE {where_clause}"
+        
+        print(f"[Database] Checking duplicate matching fields: {params}")
+        cursor.execute(query, tuple(params))
         
         count = cursor.fetchone()[0]
         cursor.close()

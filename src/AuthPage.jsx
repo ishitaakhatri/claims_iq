@@ -69,6 +69,9 @@ const clerkAppearance = {
 };
 
 export default function AuthPage({ mode = "sign-in" }) {
+  // Check URL params to allow Clerk's links to switch modes
+  const urlParams = new URLSearchParams(window.location.search);
+  const currentMode = urlParams.get('mode') || mode;
   const css = `
     @keyframes float {
       0% { transform: translateY(0px) rotate(0deg); }
@@ -277,7 +280,7 @@ export default function AuthPage({ mode = "sign-in" }) {
         <div className="floating-shape" style={{ top: '10%', right: '10%' }}></div>
         <div className="floating-shape" style={{ bottom: '15%', left: '10%', animationDelay: '-5s', width: '250px', height: '250px' }}></div>
 
-        {mode === "sign-in" ? (
+        {currentMode === "sign-in" ? (
           <SignIn appearance={clerkAppearance} signUpUrl="/?mode=sign-up" />
         ) : (
           <SignUp appearance={clerkAppearance} signInUrl="/?mode=sign-in" />

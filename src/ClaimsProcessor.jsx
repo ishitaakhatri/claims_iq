@@ -1588,7 +1588,11 @@ export default function ClaimsProcessor() {
                               {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
                             </span>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                             <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
+=======
+                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
+>>>>>>> Stashed changes
 =======
                             <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
 >>>>>>> Stashed changes

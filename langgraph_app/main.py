@@ -1,4 +1,5 @@
 import os
+import asyncio
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -14,7 +15,7 @@ from .services.database import (
     save_claim_to_db, get_claims_history, backfill_orphaned_claims,
     get_all_rules, upsert_rule, delete_rule,
     register_session, check_active_session, terminate_session,
-    delete_claim
+    delete_claim, get_db_connection
 )
 from .auth import get_current_user
 from .graph.rule_assistant import rule_assistant_app
@@ -304,45 +305,82 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
             else:
                 extracted_data = state.get("extracted_data")
                 evaluation = state.get("evaluation")
-                blob_uri = None
-                claim_id = None
 
-                # Upload document to Azure Blob Storage
-                try:
-                    print(f"[Integration] Attempting blob upload for {request.file_name}...")
-                    blob_uri = upload_to_blob(request.file_data, request.file_name)
-                    print(f"[Integration] Blob upload successful: {blob_uri}")
-                    yield f"data: {json.dumps({'node': 'blob_upload', 'status': 'completed'})}\n\n"
-                except Exception as e:
-                    print(f"[Integration] Blob upload failed (non-fatal): {e}")
-
-                # Save claim record to PostgreSQL
-                try:
-                    print(f"[Integration] Attempting to save claim record to DB...")
-                    status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
-                    form_category = (extracted_data or {}).get("claimType", "Medical Claim")
-                    claim_id = save_claim_to_db(
-                        user_id=internal_user_id,
-                        form_category=form_category,
-                        blob_uri=blob_uri or "",
-                        status=status,
-                        extracted_data=extracted_data or {},
-                        evaluation_results=evaluation or {},
-                    )
-                    print(f"[Integration] DB save successful: {claim_id}")
-                    yield f"data: {json.dumps({'node': 'db_save', 'status': 'completed'})}\n\n"
-                except Exception as e:
-                    print(f"[Integration] DB save failed (non-fatal): {e}")
-
+                # ── Send results to user IMMEDIATELY ──
                 final_payload = {
                     "final_result": {
                         "extracted_data": extracted_data,
                         "evaluation": evaluation,
-                        "blob_uri": blob_uri,
-                        "claim_id": claim_id,
+                        "blob_uri": None,
+                        "claim_id": None,
                     }
                 }
                 yield f"data: {json.dumps(final_payload)}\n\n"
+
+                # ── Background: Blob upload + DB save in parallel ──
+                yield f"data: {json.dumps({'node': 'background_save', 'status': 'saving'})}\n\n"
+
+                loop = asyncio.get_event_loop()
+                blob_uri = None
+                claim_id = None
+                errors = []
+
+                async def bg_blob_upload():
+                    nonlocal blob_uri
+                    try:
+                        print(f"[Integration] Attempting blob upload for {request.file_name}...")
+                        blob_uri = await loop.run_in_executor(
+                            None, upload_to_blob, request.file_data, request.file_name
+                        )
+                        print(f"[Integration] Blob upload successful: {blob_uri}")
+                    except Exception as e:
+                        print(f"[Integration] Blob upload failed (non-fatal): {e}")
+                        errors.append(f"blob: {e}")
+
+                async def bg_db_save():
+                    nonlocal claim_id
+                    try:
+                        print(f"[Integration] Attempting to save claim record to DB...")
+                        status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
+                        form_category = (extracted_data or {}).get("claimType", "Medical Claim")
+                        claim_id = await loop.run_in_executor(
+                            None, save_claim_to_db,
+                            internal_user_id, form_category, "",
+                            status, extracted_data or {}, evaluation or {},
+                        )
+                        print(f"[Integration] DB save successful: {claim_id}")
+                    except Exception as e:
+                        print(f"[Integration] DB save failed (non-fatal): {e}")
+                        errors.append(f"db: {e}")
+
+                # Run both tasks in parallel
+                await asyncio.gather(bg_blob_upload(), bg_db_save())
+
+                # If we have the blob_uri now, update the DB record with it
+                if blob_uri and claim_id:
+                    try:
+                        def _update_blob(cid, uri):
+                            conn = None
+                            try:
+                                import psycopg2
+                                conn = get_db_connection()
+                                cur = conn.cursor()
+                                cur.execute("UPDATE claims_history SET document_url = %s WHERE id = %s", (uri, cid))
+                                conn.commit()
+                                cur.close()
+                                print(f"[Integration] DB record updated with blob URI")
+                            except Exception as e2:
+                                print(f"[Integration] Failed to update blob URI in DB: {e2}")
+                            finally:
+                                if conn: conn.close()
+                        await loop.run_in_executor(None, _update_blob, claim_id, blob_uri)
+                    except Exception:
+                        pass
+
+                if errors:
+                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'save_error', 'message': '; '.join(errors)})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'saved'})}\n\n"
                 
         except Exception as e:
             print(f"Graph Execution Error: {str(e)}")

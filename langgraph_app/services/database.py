@@ -3,6 +3,7 @@ import uuid
 import json
 from datetime import datetime, timezone
 import psycopg2
+import asyncpg
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -191,6 +192,67 @@ def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: s
         if conn:
             conn.close()
 
+
+async def async_check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str) -> bool:
+    """
+    Async version of check_duplicate_claim using asyncpg.
+    Does not block the event loop — safe for parallel LangGraph nodes.
+    """
+    fields_to_check = []
+    params = []
+    idx = 1  # asyncpg uses $1, $2, ... placeholders
+
+    if policy_number:
+        fields_to_check.append(f"(extracted_data::jsonb)->>'policyNumber' = ${idx}")
+        params.append(policy_number)
+        idx += 1
+    if claimant_id:
+        fields_to_check.append(f"(extracted_data::jsonb)->>'claimantId' = ${idx}")
+        params.append(claimant_id)
+        idx += 1
+    if incident_date:
+        fields_to_check.append(f"(extracted_data::jsonb)->>'incidentDate' = ${idx}")
+        params.append(incident_date)
+        idx += 1
+    if provider:
+        fields_to_check.append(f"(extracted_data::jsonb)->>'providerName' = ${idx}")
+        params.append(provider)
+        idx += 1
+
+    if not fields_to_check:
+        print("[Database-Async] Duplicate check skipped: no fields provided")
+        return False
+
+    conn = None
+    try:
+        host = os.getenv("DB_HOST", "").strip()
+        user = os.getenv("DB_USER", "").strip()
+        port = int(os.getenv("DB_PORT", "5432").strip())
+        dbname = os.getenv("DB_NAME", "claims_iq").strip()
+        password = os.getenv("DB_PASSWORD", "").strip()
+        sslmode = os.getenv("DB_SSLMODE", "require").strip()
+
+        ssl_val = True if sslmode == "require" else sslmode
+        conn = await asyncpg.connect(
+            host=host, port=port, user=user, password=password, database=dbname, ssl=ssl_val
+        )
+
+        where_clause = " AND ".join(fields_to_check)
+        query = f"SELECT COUNT(*) FROM claims_history WHERE {where_clause}"
+
+        print(f"[Database-Async] Checking duplicate matching fields: {params}")
+        count = await conn.fetchval(query, *params)
+
+        is_duplicate = count > 0
+        print(f"[Database-Async] Duplicate check result: {'DUPLICATE FOUND' if is_duplicate else 'Unique'} (found {count} matches)")
+        return is_duplicate
+    except Exception as e:
+        print(f"[Database-Async] Error checking duplicate claim: {e}")
+        return False
+    finally:
+        if conn:
+            await conn.close()
+
 def get_claims_history(user_id: str, is_admin: bool = False) -> list:
     """
     Fetches the claims history.
@@ -239,7 +301,7 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
                 "claimant": extracted.get("claimantName", "Unknown"),
                 "amount": extracted.get("claimAmount"),
                 "routing": evaluation.get("routing", row[6]),
-                "time": row[3].strftime("%I:%M:%S %p") if row[3] else "N/A",
+                "time": row[3].isoformat() if row[3] else "N/A",
                 "confidence": evaluation.get("confidence", 0),
                 "extracted": extracted,
                 "evaluation": evaluation,

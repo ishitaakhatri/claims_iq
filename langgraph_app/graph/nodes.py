@@ -1,27 +1,39 @@
 from .state import ClaimsState
 from ..tools.tools import call_azure_layout, call_openai_extraction
-from ..services.database import check_duplicate_claim
+from ..services.database import async_check_duplicate_claim
 import asyncio
 # ─── Business Rules Engine ────────────────────────────────────────────────────
-# Duplicate check is now handled via database
+# Duplicate check is now handled via database (async)
 
 def update_rule_description(rule: dict) -> str:
     """
-    Dynamically generates description based on current rule value/threshold.
+    Dynamically generates description based on current rule config values.
+    Works for ALL rule types — threshold, comparison, and cross-field.
     """
     config = rule.get("config", {})
     val = config.get("value")
+    op = config.get("operator", "")
+    field = config.get("field_name", "")
     
-    if rule["id"] == "BR001":
-        formatted_val = f"${val:,}" if isinstance(val, (int, float)) else val
-        return f"Claims ≤ {formatted_val} auto-approved"
-    elif rule["id"] == "BR002":
-        formatted_val = f"${val:,}" if isinstance(val, (int, float)) else val
-        return f"Claims > {formatted_val} require senior review"
-    elif rule["id"] == "BR003":
-        return f"All required fields must be present (Min {val}%)"
-    elif rule["id"] == "BR004":
-        return f"No fraud flags detected (Threshold ≤ {val})"
+    OP_LABELS = {
+        "lte": "≤", "lt": "<", "gte": "≥", "gt": ">", "eq": "=",
+        "not_duplicate": "NOT DUPLICATE"
+    }
+    
+    rule_type = rule.get("rule_type", "threshold")
+    
+    if rule_type == "cross_field" or op == "not_duplicate":
+        return rule.get("description", "Cross-field validation")
+    
+    if val is not None and field and op:
+        op_label = OP_LABELS.get(op, op)
+        if field == "claimAmount" and isinstance(val, (int, float)):
+            formatted_val = f"${val:,.0f}"
+        elif isinstance(val, (int, float)) and field in ("completeness", "fraudScore"):
+            formatted_val = f"{val}%"
+        else:
+            formatted_val = str(val)
+        return f"{field} {op_label} {formatted_val}"
     
     return rule.get("description", "")
 
@@ -105,7 +117,9 @@ def create_rule_node(base_rule: dict):
         config_override = (state.get("rule_config") or {}).get(rule_id, {})
         if "threshold" in config_override:
             rule["config"]["value"] = config_override["threshold"]
-            rule["description"] = update_rule_description(rule)
+        
+        # Always dynamically generate description from current config
+        rule["description"] = update_rule_description(rule)
 
         # Handle Duplicate Check (BR006) specifically with Database
         if rule_id == "BR006":
@@ -114,7 +128,7 @@ def create_rule_node(base_rule: dict):
             incident_date = extracted_data.get("incidentDate")
             provider = extracted_data.get("providerName")
             
-            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
+            is_duplicate = await async_check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
             extracted_data["isDuplicate"] = is_duplicate
 
         # Artificial delay for UI visibility

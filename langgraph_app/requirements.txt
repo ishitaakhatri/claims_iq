@@ -8,4 +8,5 @@ pydantic
 python-multipart
 azure-storage-blob
 psycopg2-binary
+asyncpg
 clerk-backend-api

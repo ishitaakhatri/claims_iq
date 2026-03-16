@@ -29,71 +29,81 @@ function buildNodeMessages(rules) {
 async function processClaimWithLangGraph(fileData, fileType, fileName, ruleConfig, onLog, token) {
   console.log("🚀 [LangGraph Backend] Processing file:", fileName);
 
-  try {
-    const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
-    const response = await fetch(`${apiUrl}/process-claim`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        file_data: fileData,
-        file_type: fileType,
-        file_name: fileName,
-        rule_config: ruleConfig
-      }),
-    });
+  return new Promise(async (resolve, reject) => {
+    try {
+      const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/process-claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          file_data: fileData,
+          file_type: fileType,
+          file_name: fileName,
+          rule_config: ruleConfig
+        }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || "Backend processing failed");
-    }
+      if (!response.ok) {
+        const errorData = await response.json();
+        return reject(new Error(errorData.detail || "Backend processing failed"));
+      }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let result = null;
-    let buffer = "";
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let hasResolved = false;
+      let buffer = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+      // Start background reading
+      (async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || ""; // Keep any partial data for the next read
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() || ""; // Keep any partial data for the next read
 
-      for (const part of parts) {
-        if (!part.trim()) continue;
+            for (const part of parts) {
+              if (!part.trim()) continue;
 
-        const lines = part.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.error) {
-                throw new Error(data.error);
+              const lines = part.split("\n");
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.error) {
+                      if (!hasResolved) reject(new Error(data.error));
+                      return; // stop stream processing on error
+                    }
+                    if (data.node) {
+                      onLog(data);
+                    }
+                    if (data.final_result) {
+                      console.log("✅ [LangGraph Backend] Success (early return):", data.final_result);
+                      resolve(data.final_result);
+                      hasResolved = true;
+                    }
+                  } catch (e) {
+                    console.error("❌ Error parsing JSON from stream:", e, "Part:", part);
+                  }
+                }
               }
-              if (data.node) {
-                onLog(data);
-              }
-              if (data.final_result) {
-                result = data.final_result;
-              }
-            } catch (e) {
-              console.error("❌ Error parsing JSON from stream:", e, "Part:", part);
             }
           }
+        } catch (err) {
+          console.error("❌ [LangGraph Backend] Stream reading error:", err);
+          if (!hasResolved) reject(err);
         }
-      }
+      })();
+    } catch (error) {
+      console.error("❌ [LangGraph Backend] Request Error:", error.message);
+      reject(error);
     }
-
-    console.log("✅ [LangGraph Backend] Success:", result);
-    return result;
-  } catch (error) {
-    console.error("❌ [LangGraph Backend] Error:", error.message);
-    throw error;
-  }
+  });
 }
 
 
@@ -194,6 +204,7 @@ export default function ClaimsProcessor() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // claim id to confirm delete
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error" | null
 
   const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
@@ -305,6 +316,15 @@ export default function ClaimsProcessor() {
 
       const onLog = (data) => {
         const { node, status } = data;
+
+        if (node === 'background_save') {
+          setSaveStatus(status); // 'saving' | 'saved' | 'save_error'
+          if (status === 'saved' || status === 'save_error') {
+            setTimeout(() => setSaveStatus(null), 3500); // auto-hide after 3.5s
+          }
+          return; // don't add to processing logs
+        }
+
         setProcessingLogs(prev => {
           const message = currentNodeMessages[node] || `Processing ${node}...`;
           const existingIndex = prev.findIndex(l => l.node === node);
@@ -1567,7 +1587,7 @@ export default function ClaimsProcessor() {
                             <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                               {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
                             </span>
-                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time}</span>
+                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
                           </div>
                           <div style={{ color: "#d1d5db", fontWeight: 500, marginBottom: 2 }}>{c.claimant}</div>
                           <div style={{ color: colors.muted, fontSize: 10 }}>
@@ -2084,6 +2104,48 @@ export default function ClaimsProcessor() {
           </div>
         )
       }
+
+      {/* Background Save Toast Notification */}
+      {saveStatus && (
+        <div style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          background: "rgba(17, 24, 39, 0.95)",
+          backdropFilter: "blur(8px)",
+          border: `1px solid ${colors.border}`,
+          borderRadius: 8,
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+          zIndex: 9999,
+          animation: "slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          fontFamily: "var(--font-primary)",
+          fontSize: 14,
+          color: colors.text
+        }}>
+          {saveStatus === 'saving' && (
+            <>
+              <div style={{ width: 16, height: 16, border: `2px solid ${colors.dim}`, borderTopColor: colors.accent, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+              <span>Saving results...</span>
+            </>
+          )}
+          {saveStatus === 'saved' && (
+            <>
+              <span style={{ color: "#4ade80", fontSize: 16 }}>✓</span>
+              <span>Saved successfully</span>
+            </>
+          )}
+          {saveStatus === 'save_error' && (
+            <>
+              <span style={{ color: "#f87171", fontSize: 16 }}>✗</span>
+              <span style={{ color: "#fca5a5" }}>Error saving results</span>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

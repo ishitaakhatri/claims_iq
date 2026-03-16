@@ -34,6 +34,30 @@ const OP_LABELS = {
     lte: '≤', lt: '<', gte: '≥', gt: '>', eq: '=', not_duplicate: 'NOT DUPLICATE'
 };
 
+// Dynamically generate a human-readable description from rule config
+function generateDescription(rule) {
+    const config = rule.config || {};
+    const val = config.value;
+    const op = config.operator || '';
+    const field = config.field_name || '';
+    if (rule.rule_type === 'cross_field' || op === 'not_duplicate') {
+        return rule.description || 'Cross-field validation';
+    }
+    if (val !== undefined && val !== null && field && op) {
+        const opLabel = OP_LABELS[op] || op;
+        let formattedVal;
+        if (field === 'claimAmount' && !isNaN(val)) {
+            formattedVal = `$${Number(val).toLocaleString()}`;
+        } else if (['completeness', 'fraudScore'].includes(field) && !isNaN(val)) {
+            formattedVal = `${val}%`;
+        } else {
+            formattedVal = String(val);
+        }
+        return `${field} ${opLabel} ${formattedVal}`;
+    }
+    return rule.description || '';
+}
+
 // Simple markdown-to-HTML renderer for chat messages
 function renderMarkdown(text) {
     return text
@@ -59,6 +83,9 @@ export default function RulesManagement({ colors, getToken }) {
     const [activeTab, setActiveTab] = useState('registry');
     const [rules, setRules] = useState([]);
     const [deletingRuleId, setDeletingRuleId] = useState(null);
+    const [editingRule, setEditingRule] = useState(null);
+    const [editForm, setEditForm] = useState({});
+    const [savingEditId, setSavingEditId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -159,13 +186,45 @@ export default function RulesManagement({ colors, getToken }) {
         const rule = rules.find(r => r.id === id);
         if (!rule) return;
         const updated = { ...rule, config: { ...rule.config, value: newValue } };
+        // Also update the description dynamically
+        updated.description = generateDescription(updated);
         setRules(prev => prev.map(r => r.id === id ? updated : r));
-        // Debounce — only persist on mouse up (handled in component)
         return updated;
     };
 
     const persistThreshold = async (rule) => {
-        await updateRule(rule);
+        // Ensure description is up-to-date before persisting
+        const withDesc = { ...rule, description: generateDescription(rule) };
+        await updateRule(withDesc);
+    };
+
+    const startEditing = (rule) => {
+        setEditingRule(rule.id);
+        setEditForm({
+            name: rule.name,
+            description: rule.description || '',
+            config: { ...rule.config },
+        });
+    };
+
+    const cancelEditing = () => {
+        setEditingRule(null);
+        setEditForm({});
+    };
+
+    const saveEdit = async (rule) => {
+        setSavingEditId(rule.id);
+        try {
+            const updated = { ...rule, name: editForm.name, description: editForm.description, config: editForm.config };
+            // Regenerate description from new config
+            updated.description = generateDescription(updated);
+            setRules(prev => prev.map(r => r.id === rule.id ? updated : r));
+            await updateRule(updated);
+        } finally {
+            setSavingEditId(null);
+            setEditingRule(null);
+            setEditForm({});
+        }
     };
 
     // ─── Deploy Rule from Configurator ───
@@ -332,82 +391,200 @@ export default function RulesManagement({ colors, getToken }) {
 
                                         return (
                                             <div key={rule.id} style={{
-                                                padding: '24px 32px', borderBottom: idx === rules.length - 1 ? 'none' : `1px solid ${colors.border}`,
+                                                padding: editingRule === rule.id ? '0' : '24px 32px',
+                                                borderBottom: idx === rules.length - 1 ? 'none' : `1px solid ${colors.border}`,
                                                 transition: 'all 0.3s ease', opacity: rule.is_active ? 1 : 0.4
                                             }}>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 220px 140px 100px', alignItems: 'center', gap: 24 }}>
-                                                    <div style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 13 }}>{rule.id}</div>
-
-                                                    <div>
-                                                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{rule.name}</div>
-                                                        <div style={{ fontSize: 12, color: colors.muted }}>{rule.description}</div>
-                                                    </div>
-
-                                                    <div>
-                                                        <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>
-                                                            {isThreshold ? 'THRESHOLD' : 'CONFIG'}
-                                                        </div>
-                                                        {isThreshold ? (
+                                                {editingRule === rule.id ? (
+                                                    /* ── Edit Mode: Expanded Card ── */
+                                                    <div style={{
+                                                        background: 'rgba(245, 158, 11, 0.04)',
+                                                        border: `1.5px solid ${colors.accent}44`,
+                                                        borderRadius: 14,
+                                                        padding: '24px 28px',
+                                                        margin: '12px 0',
+                                                        animation: 'fadeIn 0.25s ease',
+                                                        boxShadow: `0 0 24px ${colors.accent}11`
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                                <input
-                                                                    type="range"
-                                                                    min={isAmount ? 1000 : 0}
-                                                                    max={isAmount ? 100000 : 100}
-                                                                    step={isAmount ? 1000 : 5}
-                                                                    value={configValue || 0}
-                                                                    disabled={!rule.is_active}
-                                                                    style={{ flex: 1, accentColor: colors.accent, cursor: rule.is_active ? 'pointer' : 'not-allowed' }}
-                                                                    onChange={(e) => updateThreshold(rule.id, parseInt(e.target.value))}
-                                                                    onMouseUp={() => {
-                                                                        const current = rules.find(r => r.id === rule.id);
-                                                                        if (current) persistThreshold(current);
+                                                                <span style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 14 }}>{rule.id}</span>
+                                                                <span style={{ fontSize: 10, color: colors.accent, background: `${colors.accent}18`, padding: '3px 10px', borderRadius: 6, fontWeight: 800, letterSpacing: '0.05em' }}>EDITING</span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: 10 }}>
+                                                                <button
+                                                                    onClick={() => saveEdit(rule)}
+                                                                    disabled={savingEditId === rule.id}
+                                                                    style={{
+                                                                        background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid rgba(16, 185, 129, 0.5)', color: '#10b981',
+                                                                        fontSize: 12, fontWeight: 800, cursor: savingEditId === rule.id ? 'wait' : 'pointer',
+                                                                        borderRadius: 8, padding: '7px 18px', transition: '0.2s',
+                                                                        display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Barlow', sans-serif"
                                                                     }}
+                                                                    onMouseEnter={(e) => { if (savingEditId !== rule.id) e.currentTarget.style.background = 'rgba(16, 185, 129, 0.22)'; }}
+                                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)'; }}
+                                                                >
+                                                                    {savingEditId === rule.id ? (
+                                                                        <><div style={{ width: 12, height: 12, border: '2px solid rgba(16,185,129,0.3)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />SAVING...</>
+                                                                    ) : '✓ SAVE'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={cancelEditing}
+                                                                    style={{
+                                                                        background: 'rgba(107, 114, 128, 0.1)', border: '1.5px solid rgba(107, 114, 128, 0.3)', color: '#9ca3af',
+                                                                        fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                                                                        borderRadius: 8, padding: '7px 18px', transition: '0.2s', fontFamily: "'Barlow', sans-serif"
+                                                                    }}
+                                                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(107, 114, 128, 0.2)'; }}
+                                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(107, 114, 128, 0.1)'; }}
+                                                                >✗ CANCEL</button>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                                            <div>
+                                                                <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: colors.muted, fontFamily: 'IBM Plex Mono', marginBottom: 8, letterSpacing: '0.06em' }}>RULE NAME</label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editForm.name || ''}
+                                                                    onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                                                    style={{
+                                                                        width: '100%', background: 'rgba(17, 24, 39, 0.7)', border: `1.5px solid ${colors.border}`,
+                                                                        borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, fontWeight: 600,
+                                                                        outline: 'none', fontFamily: "'Barlow', sans-serif", transition: 'border-color 0.2s',
+                                                                        boxSizing: 'border-box'
+                                                                    }}
+                                                                    onFocus={(e) => e.target.style.borderColor = colors.accent}
+                                                                    onBlur={(e) => e.target.style.borderColor = colors.border}
+                                                                    placeholder="Rule name"
                                                                 />
-                                                                <span style={{ fontSize: 12, fontWeight: 800, minWidth: 70, textAlign: 'right' }}>
-                                                                    {isAmount ? `$${(configValue || 0).toLocaleString()}` : `${configValue || 0}%`}
-                                                                </span>
                                                             </div>
-                                                        ) : (
-                                                            <div style={{ fontSize: 13, fontWeight: 700 }}>
-                                                                {rule.config?.operator ? `${OP_LABELS[rule.config.operator] || rule.config.operator} ${rule.config.value || ''}` : '—'}
+                                                            <div>
+                                                                <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: colors.muted, fontFamily: 'IBM Plex Mono', marginBottom: 8, letterSpacing: '0.06em' }}>
+                                                                    {isThreshold ? 'THRESHOLD VALUE' : 'CONFIG VALUE'}
+                                                                </label>
+                                                                <input
+                                                                    type={isThreshold ? 'number' : 'text'}
+                                                                    value={isThreshold ? (editForm.config?.value || 0) : (editForm.config?.value || '')}
+                                                                    onChange={e => {
+                                                                        const v = e.target.value;
+                                                                        setEditForm(prev => ({ ...prev, config: { ...prev.config, value: isThreshold ? (parseInt(v) || 0) : (isNaN(v) ? v : Number(v)) } }));
+                                                                    }}
+                                                                    style={{
+                                                                        width: '100%', background: 'rgba(17, 24, 39, 0.7)', border: `1.5px solid ${colors.border}`,
+                                                                        borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, fontWeight: 700,
+                                                                        outline: 'none', fontFamily: 'IBM Plex Mono', transition: 'border-color 0.2s',
+                                                                        boxSizing: 'border-box'
+                                                                    }}
+                                                                    onFocus={(e) => e.target.style.borderColor = colors.accent}
+                                                                    onBlur={(e) => e.target.style.borderColor = colors.border}
+                                                                    placeholder={isThreshold ? '5000' : 'active'}
+                                                                />
                                                             </div>
-                                                        )}
+                                                            <div style={{ gridColumn: '1 / -1' }}>
+                                                                <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: colors.muted, fontFamily: 'IBM Plex Mono', marginBottom: 8, letterSpacing: '0.06em' }}>DESCRIPTION</label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editForm.description || ''}
+                                                                    onChange={e => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                                                                    style={{
+                                                                        width: '100%', background: 'rgba(17, 24, 39, 0.7)', border: `1.5px solid ${colors.border}`,
+                                                                        borderRadius: 8, padding: '10px 14px', color: '#9ca3af', fontSize: 13,
+                                                                        outline: 'none', fontFamily: "'Barlow', sans-serif", transition: 'border-color 0.2s',
+                                                                        boxSizing: 'border-box'
+                                                                    }}
+                                                                    onFocus={(e) => e.target.style.borderColor = colors.accent}
+                                                                    onBlur={(e) => e.target.style.borderColor = colors.border}
+                                                                    placeholder="What does this rule check?"
+                                                                />
+                                                            </div>
+                                                        </div>
                                                     </div>
+                                                ) : (
+                                                    /* ── View Mode: Standard Grid Row ── */
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 220px 140px 100px', alignItems: 'center', gap: 24 }}>
+                                                        <div style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 13 }}>{rule.id}</div>
 
-                                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                                        <button
-                                                            onClick={() => toggleRule(rule.id)}
-                                                            style={{
-                                                                background: rule.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(31, 41, 55, 0.4)',
-                                                                color: rule.is_active ? '#10b981' : colors.muted,
-                                                                border: `1px solid ${rule.is_active ? '#10b981' : colors.border}`,
-                                                                padding: '6px 16px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                                                                transition: 'all 0.3s ease'
-                                                            }}
-                                                        >
-                                                            {rule.is_active ? 'ENABLED' : 'DISABLED'}
-                                                        </button>
-                                                    </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{rule.name}</div>
+                                                            <div style={{ fontSize: 12, color: colors.muted }}>{generateDescription(rule)}</div>
+                                                        </div>
 
-                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                                                        {deletingRuleId === rule.id ? (
-                                                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#ef4444", fontSize: 12, fontWeight: 800 }}>
-                                                                <div style={{ width: 14, height: 14, border: `2px solid rgba(239, 68, 68, 0.3)`, borderTopColor: "#ef4444", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                                                                DELETING...
+                                                        <div>
+                                                            <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>
+                                                                {isThreshold ? 'THRESHOLD' : 'CONFIG'}
                                                             </div>
-                                                        ) : (
+                                                            {isThreshold ? (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                                    <input
+                                                                        type="range"
+                                                                        min={isAmount ? 1000 : 0}
+                                                                        max={isAmount ? 100000 : 100}
+                                                                        step={isAmount ? 1000 : 5}
+                                                                        value={configValue || 0}
+                                                                        disabled={!rule.is_active}
+                                                                        style={{ flex: 1, accentColor: colors.accent, cursor: rule.is_active ? 'pointer' : 'not-allowed' }}
+                                                                        onChange={(e) => updateThreshold(rule.id, parseInt(e.target.value))}
+                                                                        onMouseUp={() => {
+                                                                            const current = rules.find(r => r.id === rule.id);
+                                                                            if (current) persistThreshold(current);
+                                                                        }}
+                                                                    />
+                                                                    <span style={{ fontSize: 12, fontWeight: 800, minWidth: 70, textAlign: 'right' }}>
+                                                                        {isAmount ? `$${(configValue || 0).toLocaleString()}` : `${configValue || 0}%`}
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                                                                    {rule.config?.operator ? `${OP_LABELS[rule.config.operator] || rule.config.operator} ${rule.config.value || ''}` : '—'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', justifyContent: 'center' }}>
                                                             <button
-                                                                onClick={() => deleteRuleById(rule.id)}
+                                                                onClick={() => toggleRule(rule.id)}
                                                                 style={{
-                                                                    background: 'none', border: 'none', color: '#ef4444',
-                                                                    fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
+                                                                    background: rule.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(31, 41, 55, 0.4)',
+                                                                    color: rule.is_active ? '#10b981' : colors.muted,
+                                                                    border: `1px solid ${rule.is_active ? '#10b981' : colors.border}`,
+                                                                    padding: '6px 16px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                                                                    transition: 'all 0.3s ease'
+                                                                }}
+                                                            >
+                                                                {rule.is_active ? 'ENABLED' : 'DISABLED'}
+                                                            </button>
+                                                        </div>
+
+                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                                            <button
+                                                                onClick={() => startEditing(rule)}
+                                                                style={{
+                                                                    background: 'none', border: 'none', color: colors.accent,
+                                                                    fontSize: 16, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
                                                                 }}
                                                                 onMouseEnter={(e) => e.target.style.opacity = 1}
                                                                 onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                                            >🗑️</button>
-                                                        )}
+                                                                title="Edit rule"
+                                                            >✏️</button>
+                                                            {deletingRuleId === rule.id ? (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontSize: 12, fontWeight: 800 }}>
+                                                                    <div style={{ width: 14, height: 14, border: '2px solid rgba(239, 68, 68, 0.3)', borderTopColor: '#ef4444', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                                                    DELETING...
+                                                                </div>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => deleteRuleById(rule.id)}
+                                                                    style={{
+                                                                        background: 'none', border: 'none', color: '#ef4444',
+                                                                        fontSize: 18, cursor: 'pointer', opacity: 0.6, transition: '0.2s'
+                                                                    }}
+                                                                    onMouseEnter={(e) => e.target.style.opacity = 1}
+                                                                    onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                                                                >🗑️</button>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                             </div>
                                         );
                                     })}

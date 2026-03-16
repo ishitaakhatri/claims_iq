@@ -12,6 +12,7 @@ load_dotenv()
 def call_azure_layout(file_data_b64: str, file_type: str):
     """
     Calls Azure Document Intelligence Layout model.
+    Extracts raw text, key-value pairs, and tables for better downstream accuracy.
     """
     endpoint = os.getenv("VITE_AZURE_DOC_INTELLIGENCE_ENDPOINT")
     api_key = os.getenv("VITE_AZURE_DOC_INTELLIGENCE_KEY")
@@ -29,14 +30,46 @@ def call_azure_layout(file_data_b64: str, file_type: str):
         # Decoding base64 data
         file_bytes = base64.b64decode(file_data_b64)
         
-        # Calling Azure
+        # Using prebuilt-layout for richer extraction (tables, key-value pairs, selection marks)
         poller = document_analysis_client.begin_analyze_document(
-            "prebuilt-read", file_bytes
+            "prebuilt-layout", file_bytes
         )
         result = poller.result()
         
-        # Returning full content
-        return result.content
+        # Start with the raw OCR text
+        output_parts = [result.content]
+        
+        # Extract key-value pairs (if present in Layout results)
+        if hasattr(result, 'key_value_pairs') and result.key_value_pairs:
+            kv_lines = []
+            for kv in result.key_value_pairs:
+                key = kv.key.content if kv.key else ""
+                value = kv.value.content if kv.value else ""
+                if key:
+                    kv_lines.append(f"  {key}: {value}")
+            if kv_lines:
+                output_parts.append("\n\n--- EXTRACTED KEY-VALUE PAIRS ---")
+                output_parts.append("\n".join(kv_lines))
+        
+        # Extract tables
+        if result.tables:
+            for i, table in enumerate(result.tables):
+                table_lines = [f"\n\n--- TABLE {i+1} ({table.row_count}x{table.column_count}) ---"]
+                # Build a grid
+                grid = {}
+                for cell in table.cells:
+                    grid[(cell.row_index, cell.column_index)] = cell.content
+                for row in range(table.row_count):
+                    row_cells = [grid.get((row, col), "") for col in range(table.column_count)]
+                    table_lines.append(" | ".join(row_cells))
+                output_parts.append("\n".join(table_lines))
+        
+        combined = "\n".join(output_parts)
+        print(f"[OCR] Layout extracted {len(result.content)} chars text, "
+              f"{len(result.key_value_pairs) if hasattr(result, 'key_value_pairs') and result.key_value_pairs else 0} key-value pairs, "
+              f"{len(result.tables) if result.tables else 0} tables")
+        
+        return combined
     except Exception as e:
         print(f"[Error] Azure Error: {str(e)}")
         return None
@@ -54,6 +87,7 @@ def call_openai_extraction(text: str, file_name: str):
     
     system_prompt = """You are an expert claims processing AI. Extract structured data from the provided text content of a claims document.
 The text was generated via OCR, so there might be minor errors or layout shifts. Use your reasoning to identify the correct fields.
+The input may include raw text followed by structured sections (KEY-VALUE PAIRS, TABLES) — use ALL sections to maximize extraction accuracy.
 
 Return ONLY a valid JSON object with these exact fields:
 {
@@ -101,9 +135,10 @@ CRITICAL INSTRUCTIONS FOR additionalFields:
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
+            temperature=0,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Extract claims data from this document text (Filename: {file_name}):\\n\\n{text}"}
+                {"role": "user", "content": f"Extract claims data from this document text (Filename: {file_name}):\n\n{text}"}
             ],
             response_format={"type": "json_object"}
         )

@@ -9,6 +9,7 @@ class ClaimsState(TypedDict):
     file_data: str  # Base64
     file_type: str
     file_name: str
+    user_id: Optional[str]
     
     # intermediate steps
     ocr_content: Optional[str]

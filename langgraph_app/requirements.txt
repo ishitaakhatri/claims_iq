@@ -8,5 +8,10 @@ pydantic
 python-multipart
 azure-storage-blob
 psycopg2-binary
+<<<<<<< Updated upstream
 asyncpg
 clerk-backend-api
+=======
+clerk-backend-api
+langsmith
+>>>>>>> Stashed changes

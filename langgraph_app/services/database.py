@@ -140,15 +140,21 @@ def get_user_by_clerk_id(clerk_id: str, email: str = "") -> dict:
         # Return fallback missing values to not break frontend explicitly immediately
         return {"id": None, "role": None}
 
-def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str) -> bool:
+def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str, user_id: str = None) -> bool:
     """
     Checks if a claim with the given combination of policy number, claimant ID, 
-    incident date, and provider already exists in the claims_history table.
+    incident date, and provider already exists in the claims_history table
+    for the given user.
     Queries the extracted_data column (stored as JSON string).
     If any of the fields are missing, it will only check against the fields that are present.
     """
     fields_to_check = []
     params = []
+    
+    # Scope duplicate check to the current user
+    if user_id:
+        fields_to_check.append("user_id = %s")
+        params.append(user_id)
     
     if policy_number:
         fields_to_check.append("(extracted_data::jsonb)->>'policyNumber' = %s")
@@ -175,7 +181,7 @@ def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: s
         where_clause = " AND ".join(fields_to_check)
         query = f"SELECT COUNT(*) FROM claims_history WHERE {where_clause}"
         
-        print(f"[Database] Checking duplicate matching fields: {params}")
+        print(f"[Database] Checking duplicate for user={user_id} matching fields: {params}")
         cursor.execute(query, tuple(params))
         
         count = cursor.fetchone()[0]

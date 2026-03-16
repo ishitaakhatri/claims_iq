@@ -1587,7 +1587,11 @@ export default function ClaimsProcessor() {
                             <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                               {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
                             </span>
+<<<<<<< Updated upstream
                             <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
+=======
+                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
+>>>>>>> Stashed changes
                           </div>
                           <div style={{ color: "#d1d5db", fontWeight: 500, marginBottom: 2 }}>{c.claimant}</div>
                           <div style={{ color: colors.muted, fontSize: 10 }}>

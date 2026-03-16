@@ -15,6 +15,10 @@ def update_rule_description(rule: dict) -> str:
     op = config.get("operator", "")
     field = config.get("field_name", "")
     
+<<<<<<< Updated upstream
+=======
+    # Operator labels for readable descriptions
+>>>>>>> Stashed changes
     OP_LABELS = {
         "lte": "≤", "lt": "<", "gte": "≥", "gt": ">", "eq": "=",
         "not_duplicate": "NOT DUPLICATE"
@@ -27,12 +31,20 @@ def update_rule_description(rule: dict) -> str:
     
     if val is not None and field and op:
         op_label = OP_LABELS.get(op, op)
+<<<<<<< Updated upstream
+=======
+        # Format value nicely
+>>>>>>> Stashed changes
         if field == "claimAmount" and isinstance(val, (int, float)):
             formatted_val = f"${val:,.0f}"
         elif isinstance(val, (int, float)) and field in ("completeness", "fraudScore"):
             formatted_val = f"{val}%"
         else:
             formatted_val = str(val)
+<<<<<<< Updated upstream
+=======
+        
+>>>>>>> Stashed changes
         return f"{field} {op_label} {formatted_val}"
     
     return rule.get("description", "")
@@ -87,7 +99,8 @@ def ocr_node(state: ClaimsState):
     content = call_azure_layout(state["file_data"], state["file_type"])
     if not content:
         return {"error": "OCR failed (Azure)"}
-    return {"ocr_content": content}
+    # Clear file_data — no longer needed downstream (saves memory + tracing payload)
+    return {"ocr_content": content, "file_data": ""}
 
 def extraction_node(state: ClaimsState):
     """Extraction step using OpenAI"""
@@ -98,7 +111,8 @@ def extraction_node(state: ClaimsState):
     extracted = call_openai_extraction(state["ocr_content"], state["file_name"])
     if not extracted:
         return {"error": "Extraction failed (OpenAI)"}
-    return {"extracted_data": extracted} # Don't reset rule_results - the operator.add reducer handles it
+    # Clear ocr_content — no longer needed downstream (saves memory + tracing payload)
+    return {"extracted_data": extracted, "ocr_content": ""}
 
 def create_rule_node(base_rule: dict):
     """
@@ -127,8 +141,13 @@ def create_rule_node(base_rule: dict):
             claimant_id = extracted_data.get("claimantId")
             incident_date = extracted_data.get("incidentDate")
             provider = extracted_data.get("providerName")
+            user_id = state.get("user_id")
             
+<<<<<<< Updated upstream
             is_duplicate = await async_check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
+=======
+            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
+>>>>>>> Stashed changes
             extracted_data["isDuplicate"] = is_duplicate
 
         # Artificial delay for UI visibility

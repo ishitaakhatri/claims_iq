@@ -258,6 +258,7 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
         "file_data": request.file_data,
         "file_type": request.file_type,
         "file_name": request.name if hasattr(request, 'name') else request.file_name,
+        "user_id": internal_user_id,
         "ocr_content": None,
         "extracted_data": None,
         "rule_results": [],

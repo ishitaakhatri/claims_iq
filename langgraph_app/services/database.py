@@ -199,7 +199,7 @@ def check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: s
             conn.close()
 
 
-async def async_check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str) -> bool:
+async def async_check_duplicate_claim(policy_number: str, claimant_id: str, incident_date: str, provider: str, user_id: str = None) -> bool:
     """
     Async version of check_duplicate_claim using asyncpg.
     Does not block the event loop — safe for parallel LangGraph nodes.
@@ -207,6 +207,12 @@ async def async_check_duplicate_claim(policy_number: str, claimant_id: str, inci
     fields_to_check = []
     params = []
     idx = 1  # asyncpg uses $1, $2, ... placeholders
+
+    # Scope duplicate check to the current user
+    if user_id:
+        fields_to_check.append(f"user_id = ${idx}")
+        params.append(user_id)
+        idx += 1
 
     if policy_number:
         fields_to_check.append(f"(extracted_data::jsonb)->>'policyNumber' = ${idx}")

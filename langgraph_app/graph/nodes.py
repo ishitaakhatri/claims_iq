@@ -15,18 +15,7 @@ def update_rule_description(rule: dict) -> str:
     op = config.get("operator", "")
     field = config.get("field_name", "")
     
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
     # Operator labels for readable descriptions
->>>>>>> Stashed changes
-=======
-    # Operator labels for readable descriptions
->>>>>>> Stashed changes
-=======
-    # Operator labels for readable descriptions
->>>>>>> Stashed changes
     OP_LABELS = {
         "lte": "≤", "lt": "<", "gte": "≥", "gt": ">", "eq": "=",
         "not_duplicate": "NOT DUPLICATE"
@@ -39,36 +28,14 @@ def update_rule_description(rule: dict) -> str:
     
     if val is not None and field and op:
         op_label = OP_LABELS.get(op, op)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
         # Format value nicely
->>>>>>> Stashed changes
-=======
-        # Format value nicely
->>>>>>> Stashed changes
-=======
-        # Format value nicely
->>>>>>> Stashed changes
         if field == "claimAmount" and isinstance(val, (int, float)):
             formatted_val = f"${val:,.0f}"
         elif isinstance(val, (int, float)) and field in ("completeness", "fraudScore"):
             formatted_val = f"{val}%"
         else:
             formatted_val = str(val)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
         
->>>>>>> Stashed changes
-=======
-        
->>>>>>> Stashed changes
-=======
-        
->>>>>>> Stashed changes
         return f"{field} {op_label} {formatted_val}"
     
     return rule.get("description", "")
@@ -165,21 +132,8 @@ def create_rule_node(base_rule: dict):
             claimant_id = extracted_data.get("claimantId")
             incident_date = extracted_data.get("incidentDate")
             provider = extracted_data.get("providerName")
-            user_id = state.get("user_id")
             
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            is_duplicate = await async_check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
-=======
-            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
->>>>>>> Stashed changes
-=======
-            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
->>>>>>> Stashed changes
-=======
-            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
->>>>>>> Stashed changes
+            is_duplicate = await async_check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
             extracted_data["isDuplicate"] = is_duplicate
 
         # Artificial delay for UI visibility
@@ -231,4 +185,3 @@ async def evaluation_node(state: ClaimsState):
         "evaluation": evaluation,
         "routing": evaluation["routing"]
     }
-

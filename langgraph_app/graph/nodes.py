@@ -17,6 +17,10 @@ def update_rule_description(rule: dict) -> str:
     
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+    # Operator labels for readable descriptions
+>>>>>>> Stashed changes
 =======
     # Operator labels for readable descriptions
 >>>>>>> Stashed changes
@@ -37,6 +41,10 @@ def update_rule_description(rule: dict) -> str:
         op_label = OP_LABELS.get(op, op)
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        # Format value nicely
+>>>>>>> Stashed changes
 =======
         # Format value nicely
 >>>>>>> Stashed changes
@@ -51,6 +59,10 @@ def update_rule_description(rule: dict) -> str:
             formatted_val = str(val)
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        
+>>>>>>> Stashed changes
 =======
         
 >>>>>>> Stashed changes
@@ -157,7 +169,11 @@ def create_rule_node(base_rule: dict):
             
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             is_duplicate = await async_check_duplicate_claim(policy_number, claimant_id, incident_date, provider)
+=======
+            is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
+>>>>>>> Stashed changes
 =======
             is_duplicate = check_duplicate_claim(policy_number, claimant_id, incident_date, provider, user_id)
 >>>>>>> Stashed changes

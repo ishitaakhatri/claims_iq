@@ -87,7 +87,10 @@ export default function RulesManagement({ colors, getToken }) {
     const [editForm, setEditForm] = useState({});
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     const [savingEditId, setSavingEditId] = useState(null);
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 =======
@@ -231,6 +234,28 @@ export default function RulesManagement({ colors, getToken }) {
             setEditingRule(null);
             setEditForm({});
         }
+    };
+
+    const startEditing = (rule) => {
+        setEditingRule(rule.id);
+        setEditForm({
+            name: rule.name,
+            description: rule.description || '',
+            config: { ...rule.config },
+        });
+    };
+
+    const cancelEditing = () => {
+        setEditingRule(null);
+        setEditForm({});
+    };
+
+    const saveEdit = async (rule) => {
+        const updated = { ...rule, name: editForm.name, description: editForm.description, config: editForm.config };
+        setRules(prev => prev.map(r => r.id === rule.id ? updated : r));
+        await updateRule(updated);
+        setEditingRule(null);
+        setEditForm({});
     };
 
     const startEditing = (rule) => {
@@ -447,6 +472,7 @@ export default function RulesManagement({ colors, getToken }) {
                                             }}>
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                                                 {editingRule === rule.id ? (
                                                     /* ── Edit Mode: Expanded Card ── */
                                                     <div style={{
@@ -644,10 +670,52 @@ export default function RulesManagement({ colors, getToken }) {
 
                                                         <div>
 >>>>>>> Stashed changes
+=======
+                                                <div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 220px 140px 100px', alignItems: 'center', gap: 24 }}>
+                                                        <div style={{ fontFamily: 'IBM Plex Mono', fontWeight: 800, color: colors.accent, fontSize: 13 }}>{rule.id}</div>
+
+                                                        <div>
+                                                            {editingRule === rule.id ? (
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={editForm.name || ''}
+                                                                        onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                                                        style={{
+                                                                            width: '100%', background: 'rgba(17, 24, 39, 0.8)', border: `1px solid ${colors.accent}`,
+                                                                            borderRadius: 6, padding: '6px 10px', color: '#fff', fontSize: 14, fontWeight: 700,
+                                                                            outline: 'none', fontFamily: "'Barlow', sans-serif"
+                                                                        }}
+                                                                        placeholder="Rule name"
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        value={editForm.description || ''}
+                                                                        onChange={e => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                                                                        style={{
+                                                                            width: '100%', background: 'rgba(17, 24, 39, 0.8)', border: `1px solid ${colors.border}`,
+                                                                            borderRadius: 6, padding: '5px 10px', color: '#9ca3af', fontSize: 12,
+                                                                            outline: 'none', fontFamily: "'Barlow', sans-serif"
+                                                                        }}
+                                                                        placeholder="Description"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{rule.name}</div>
+                                                                    <div style={{ fontSize: 12, color: colors.muted }}>{rule.description}</div>
+                                                                </>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+>>>>>>> Stashed changes
                                                             <div style={{ fontSize: 10, color: colors.muted, fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>
                                                                 {isThreshold ? 'THRESHOLD' : 'CONFIG'}
                                                             </div>
                                                             {isThreshold ? (
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -674,6 +742,8 @@ export default function RulesManagement({ colors, getToken }) {
                                                                     {rule.config?.operator ? `${OP_LABELS[rule.config.operator] || rule.config.operator} ${rule.config.value || ''}` : '—'}
                                                                 </div>
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                                                                 editingRule === rule.id ? (
@@ -732,6 +802,9 @@ export default function RulesManagement({ colors, getToken }) {
                                                                     </div>
                                                                 )
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -747,6 +820,7 @@ export default function RulesManagement({ colors, getToken }) {
                                                                     border: `1px solid ${rule.is_active ? '#10b981' : colors.border}`,
                                                                     padding: '6px 16px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
                                                                     transition: 'all 0.3s ease'
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
                                                                 }}
@@ -783,6 +857,9 @@ export default function RulesManagement({ colors, getToken }) {
                                                                 >🗑️</button>
 =======
                                                                 }}
+=======
+                                                                }}
+>>>>>>> Stashed changes
 =======
                                                                 }}
 >>>>>>> Stashed changes
@@ -847,6 +924,9 @@ export default function RulesManagement({ colors, getToken }) {
                                                                     )}
                                                                 </>
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes

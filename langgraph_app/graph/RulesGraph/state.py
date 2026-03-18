@@ -64,6 +64,11 @@ class RuleAssistantState(TypedDict):
     collected: dict
     current_field_index: int
     rule_data: Optional[Dict[str, Any]]
+    # ── Multi-agent workflow fields ──
+    intent: Optional[str]               # Classified intent: "add", "delete", "edit"
+    available_rules: Optional[list]     # Rules list injected from main.py
+    delete_rule_id: Optional[str]       # Target rule ID for deletion
+    error_count: int                    # Consecutive error count for fallback
 
 # ─────────────────────────────────────────────────────────
 # Field Helpers

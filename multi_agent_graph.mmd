@@ -1,0 +1,37 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__(<p>__start__</p>)
+	intent_classifier(intent_classifier)
+	fallback(fallback)
+	add_greet(add_greet)
+	add_ask_type(add_ask_type)
+	add_ask_field(add_ask_field)
+	add_confirm_deploy(add_confirm_deploy)
+	delete_identify(delete_identify)
+	delete_select(delete_select)
+	delete_confirm(delete_confirm)
+	edit_stub(edit_stub)
+	__end__(<p>__end__</p>)
+	__start__ -.-> add_ask_field;
+	__start__ -.-> add_ask_type;
+	__start__ -.-> add_confirm_deploy;
+	__start__ -.-> delete_confirm;
+	__start__ -.-> delete_identify;
+	__start__ -.-> delete_select;
+	__start__ -.-> edit_stub;
+	__start__ -.-> intent_classifier;
+	add_ask_field --> __end__;
+	add_ask_type --> __end__;
+	add_confirm_deploy --> __end__;
+	delete_confirm --> __end__;
+	delete_identify --> __end__;
+	delete_select --> __end__;
+	edit_stub --> __end__;
+	intent_classifier --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -99,13 +99,16 @@ export default function RulesManagement({ colors, getToken }) {
 
     // Chatbot State
     const [messages, setMessages] = useState([
-        { role: 'ai', content: 'Hello! I\'m your AI Rules Assistant. I can help you create new business rules step by step.\n\nTry saying something like:\n• "Create a rule for claims over $10,000"\n• "I need a rule to check policy status"\n• "Add a duplicate detection rule"\n\nOr just say "I want to add a new rule" and I\'ll guide you!' }
+        { role: 'ai', content: 'Hello! I\'m your AI Rules Assistant. I can help you manage your business rules.\n\nHere\'s what I can do:\n• ➕ **Add** a new rule — \"Create a rule for claims over $10,000\"\n• 🗑️ **Delete** an existing rule — \"Delete rule BR001\"\n• ✏️ **Edit** a rule (coming soon)\n\nWhat would you like to do?' }
     ]);
     const [inputValue, setInputValue] = useState('');
     const [chatStep, setChatStep] = useState('initial');
     const [chatCollected, setChatCollected] = useState({});
     const [chatFieldIndex, setChatFieldIndex] = useState(0);
     const [chatLoading, setChatLoading] = useState(false);
+    const [chatIntent, setChatIntent] = useState(null);
+    const [chatDeleteRuleId, setChatDeleteRuleId] = useState(null);
+    const [chatErrorCount, setChatErrorCount] = useState(0);
     const chatEndRef = useRef(null);
 
     const scrollToBottom = () => {
@@ -300,6 +303,9 @@ export default function RulesManagement({ colors, getToken }) {
                         step: chatStep,
                         collected: chatCollected,
                         current_field_index: chatFieldIndex,
+                        intent: chatIntent,
+                        delete_rule_id: chatDeleteRuleId,
+                        error_count: chatErrorCount,
                     }
                 })
             });
@@ -310,13 +316,19 @@ export default function RulesManagement({ colors, getToken }) {
                 setChatStep(data.next_step || 'initial');
                 setChatCollected(data.collected || {});
                 setChatFieldIndex(data.current_field_index || 0);
+                setChatIntent(data.intent || null);
+                setChatDeleteRuleId(data.delete_rule_id || null);
+                setChatErrorCount(data.error_count || 0);
 
-                if (data.rule) {
-                    // Rule deployed! Refresh registry
+                if (data.next_step === 'done') {
+                    // Rule deployed or deleted — refresh registry and reset state
                     await fetchRules();
                     setChatCollected({});
                     setChatFieldIndex(0);
                     setChatStep('initial');
+                    setChatIntent(null);
+                    setChatDeleteRuleId(null);
+                    setChatErrorCount(0);
                 }
             }
         } catch (err) {
@@ -802,7 +814,10 @@ export default function RulesManagement({ colors, getToken }) {
                                         setChatStep('initial');
                                         setChatCollected({});
                                         setChatFieldIndex(0);
-                                        setMessages(prev => [...prev, { role: 'ai', content: 'Conversation reset. What would you like to do?' }]);
+                                        setChatIntent(null);
+                                        setChatDeleteRuleId(null);
+                                        setChatErrorCount(0);
+                                        setMessages(prev => [...prev, { role: 'ai', content: 'Conversation reset. What would you like to do?\n\n➕ **Add** a new rule\n🗑️ **Delete** an existing rule\n✏️ **Edit** a rule' }]);
                                     }}
                                     style={{
                                         background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)',

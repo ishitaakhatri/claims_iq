@@ -1,12 +1,17 @@
 """
-RulesGraph — LLM helpers and graph node functions.
+AddRule — Nodes for the add-rule conversational flow.
+
+LLM helpers for rule extraction and field-by-field collection,
+plus the four graph nodes: greet, ask_type, ask_field, confirm_deploy.
+
+All next_step values are prefixed with "add_" for orchestrator routing.
 """
 
 import os
 import json
 from openai import OpenAI
 
-from .state import (
+from ..state import (
     RuleAssistantState,
     ALL_FIELDS, RULE_TYPES, OP_LABELS,
     format_available_fields, format_available_operators,
@@ -16,11 +21,11 @@ from .state import (
 client = OpenAI(api_key=os.getenv("VITE_OPENAI_API_KEY"))
 
 # ─────────────────────────────────────────────────────────
-# LLM Helpers
+# LLM Helpers (add-flow specific)
 # ─────────────────────────────────────────────────────────
 
-def classify_intent(message: str):
-
+def classify_rule_type(message: str):
+    """Classify which rule type the user wants (threshold/comparison/cross_field)."""
     prompt = f"""
 Classify the rule request.
 
@@ -35,19 +40,17 @@ Return JSON:
 Message:
 {message}
 """
-
     res = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role":"user","content":prompt}],
         response_format={"type":"json_object"},
         temperature=0
     )
-
     return json.loads(res.choices[0].message.content).get("type")
 
 
 def extract_rule_name(text):
-
+    """Extract a short rule name from user text."""
     prompt = f"""
 Extract a short rule name.
 
@@ -57,19 +60,17 @@ Return JSON:
 Message:
 {text}
 """
-
     res = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role":"user","content":prompt}],
         response_format={"type":"json_object"},
         temperature=0
     )
-
     return json.loads(res.choices[0].message.content)["name"]
 
 
 def extract_rule_from_text(message):
-
+    """Extract as many rule fields as possible from a natural-language message."""
     field_descriptions = "\n".join(
         f"  - {k}: {v['label']} ({v['type']})" for k, v in ALL_FIELDS.items()
     )
@@ -99,7 +100,6 @@ Allowed operators: lte, lt, gte, gt, eq, not_duplicate
 User message:
 {message}
 """
-
     try:
         res = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -113,6 +113,7 @@ User message:
 
 
 def extract_edit_intent_from_text(message, fields_needed):
+    """At the confirm step, parse which field the user wants to edit and its new value."""
     prompt = f"""
     The user is at the confirmation step of creating a business rule, and they want to edit a field.
     Given the user's message, identify which field they want to edit, and if they provided a new value for it.
@@ -141,14 +142,13 @@ def extract_edit_intent_from_text(message, fields_needed):
 # Nodes
 # ─────────────────────────────────────────────────────────
 
-def greet_node(state: RuleAssistantState):
+def add_greet_node(state: RuleAssistantState):
+    """Entry point for the add flow — extract rule fields or ask for type."""
 
     message = state["message"]
-
     extracted = extract_rule_from_text(message)
 
     if extracted:
-
         rule_type = extracted.get("rule_type")
         field = extracted.get("field_name")
         if field not in ALL_FIELDS:
@@ -157,16 +157,14 @@ def greet_node(state: RuleAssistantState):
         value = extracted.get("value")
         name = extracted.get("name")
 
-        # If no meaningful fields were extracted (just a default rule_type),
-        # fall through to ask the user to pick a rule type
         has_meaningful_fields = any([field, operator, value, name])
         if not has_meaningful_fields:
-            # No useful info extracted — ask user to choose rule type
             return {
                 "response": "What type of rule would you like?\n\n1️⃣ Threshold Rule — compares a numeric field against a value\n2️⃣ Comparison Rule — matches a field value exactly\n3️⃣ Cross-Field Rule — validates relationships between fields",
-                "next_step": "ask_type",
+                "next_step": "add_ask_type",
                 "collected": {},
-                "current_field_index": 0
+                "current_field_index": 0,
+                "intent": "add",
             }
 
         if rule_type not in RULE_TYPES:
@@ -175,9 +173,7 @@ def greet_node(state: RuleAssistantState):
         description = extracted.get("description")
         weight = extracted.get("weight")
 
-        # Build collected dict with everything we got
         collected = {"rule_type": rule_type}
-
         if name:
             collected["name"] = name
         if description:
@@ -196,7 +192,6 @@ def greet_node(state: RuleAssistantState):
 
         fields_needed = RULE_TYPES[rule_type]["fields_needed"]
 
-        # Build rich preview of what was detected
         lines = ["🔍 I detected the following from your description:\n"]
         lines.append("📋 Auto-Detected Fields:")
         lines.append(f"  • Rule Type: {RULE_TYPES[rule_type]['label']}")
@@ -212,15 +207,12 @@ def greet_node(state: RuleAssistantState):
             else:
                 lines.append(f"  • {fn}: ⚠️ Not detected")
 
-        # Show available fields for this rule type
         lines.append(f"\n📝 Available fields for {RULE_TYPES[rule_type]['label']}:")
         lines.append(format_available_fields())
 
-        # Check what's still missing
         missing = [f for f in fields_needed if f not in collected]
 
         if not missing:
-            # All fields detected — go straight to deploy confirmation
             op_label = OP_LABELS.get(collected.get("operator", ""), "")
             lines.append("\n✅ All required fields detected! Here's your rule preview:\n")
             lines.append(f"  Name: {collected.get('name')}")
@@ -233,22 +225,20 @@ def greet_node(state: RuleAssistantState):
             lines.append("\nType **deploy** to create the rule")
             lines.append("or **edit <field_name>** to change any value.")
 
-            # Set default weight if not provided
             if "weight" not in collected:
                 collected["weight"] = 30
 
             return {
                 "response": "\n".join(lines),
-                "next_step": "confirm_deploy",
+                "next_step": "add_confirm_deploy",
                 "collected": collected,
-                "current_field_index": len(fields_needed)
+                "current_field_index": len(fields_needed),
+                "intent": "add",
             }
         else:
-            # Some fields missing — ask for the first missing one
             lines.append(f"\n⚠️ Missing fields: {', '.join(missing)}")
             lines.append(f"\nLet's fill in the remaining details.")
 
-            # Find the index of the first missing field
             idx = 0
             while idx < len(fields_needed) and fields_needed[idx] in collected:
                 idx += 1
@@ -256,7 +246,6 @@ def greet_node(state: RuleAssistantState):
             next_field = fields_needed[idx]
             lines.append(f"\nStep {idx + 1}: Please provide **{next_field}**")
 
-            # Add relevant suggestions for the next field
             if next_field == "field_name":
                 lines.append(f"\nAvailable fields:")
                 lines.append(format_available_fields())
@@ -265,13 +254,14 @@ def greet_node(state: RuleAssistantState):
 
             return {
                 "response": "\n".join(lines),
-                "next_step": "ask_field",
+                "next_step": "add_ask_field",
                 "collected": collected,
-                "current_field_index": idx
+                "current_field_index": idx,
+                "intent": "add",
             }
 
-    # No fields extracted — try to at least classify the intent
-    suggested = classify_intent(message)
+    # No fields extracted — try to classify the rule type
+    suggested = classify_rule_type(message)
 
     if suggested and suggested in RULE_TYPES:
         lines = [
@@ -282,20 +272,23 @@ def greet_node(state: RuleAssistantState):
         ]
         return {
             "response": "\n".join(lines),
-            "next_step": "ask_field",
+            "next_step": "add_ask_field",
             "collected": {"rule_type": suggested},
-            "current_field_index": 0
+            "current_field_index": 0,
+            "intent": "add",
         }
 
     return {
         "response": "What type of rule would you like?\n\n1️⃣ Threshold Rule — compares a numeric field against a value\n2️⃣ Comparison Rule — matches a field value exactly\n3️⃣ Cross-Field Rule — validates relationships between fields",
-        "next_step": "ask_type",
+        "next_step": "add_ask_type",
         "collected": {},
-        "current_field_index": 0
+        "current_field_index": 0,
+        "intent": "add",
     }
 
 
-def ask_type_node(state: RuleAssistantState):
+def add_ask_type_node(state: RuleAssistantState):
+    """User selects a rule type (1/2/3 or natural language)."""
 
     message = state["message"].lower().strip()
 
@@ -306,12 +299,13 @@ def ask_type_node(state: RuleAssistantState):
     elif message == "3":
         selected = "cross_field"
     else:
-        selected = classify_intent(message)
+        selected = classify_rule_type(message)
 
     if selected not in RULE_TYPES:
         return {
             "response": "Please type 1, 2 or 3:\n\n1️⃣ Threshold Rule\n2️⃣ Comparison Rule\n3️⃣ Cross-Field Rule",
-            "next_step": "ask_type"
+            "next_step": "add_ask_type",
+            "intent": "add",
         }
 
     lines = [
@@ -323,16 +317,17 @@ def ask_type_node(state: RuleAssistantState):
 
     return {
         "response": "\n".join(lines),
-        "next_step": "ask_field",
+        "next_step": "add_ask_field",
         "collected": {"rule_type": selected},
-        "current_field_index": 0
+        "current_field_index": 0,
+        "intent": "add",
     }
 
 
-def ask_field_node(state: RuleAssistantState):
+def add_ask_field_node(state: RuleAssistantState):
+    """Collect one field at a time until all required fields are filled."""
 
     message = state["message"].strip()
-
     collected = state.get("collected", {})
     idx = state.get("current_field_index", 0)
 
@@ -340,7 +335,6 @@ def ask_field_node(state: RuleAssistantState):
     fields_needed = RULE_TYPES[rule_type]["fields_needed"]
 
     if idx < len(fields_needed):
-
         field = fields_needed[idx]
 
         try:
@@ -360,7 +354,6 @@ def ask_field_node(state: RuleAssistantState):
             collected[field] = value
 
         except Exception as e:
-            # Show the error along with available options for relevant fields
             error_msg = str(e)
             if field == "field_name":
                 error_msg += f"\n\nAvailable fields:\n{format_available_fields()}"
@@ -369,19 +362,19 @@ def ask_field_node(state: RuleAssistantState):
 
             return {
                 "response": error_msg,
-                "next_step": "ask_field",
+                "next_step": "add_ask_field",
                 "collected": collected,
-                "current_field_index": idx
+                "current_field_index": idx,
+                "intent": "add",
             }
 
         idx += 1
 
-    # Skip fields that are already collected (from auto-detection)
+    # Skip already-collected fields
     while idx < len(fields_needed) and fields_needed[idx] in collected:
         idx += 1
 
     if idx >= len(fields_needed):
-
         op_label = OP_LABELS.get(collected.get("operator"), "")
         field_name = collected.get("field_name", "")
         field_label = ALL_FIELDS.get(field_name, {}).get("label", field_name)
@@ -402,12 +395,12 @@ or **edit <field_name>** to change any value."""
 
         return {
             "response": preview,
-            "next_step": "confirm_deploy",
+            "next_step": "add_confirm_deploy",
             "collected": collected,
-            "current_field_index": idx
+            "current_field_index": idx,
+            "intent": "add",
         }
 
-    # Ask for the next missing field with helpful suggestions
     next_field = fields_needed[idx]
     prompt_lines = [f"Step {idx + 1}: Please provide **{next_field}**"]
 
@@ -420,13 +413,15 @@ or **edit <field_name>** to change any value."""
 
     return {
         "response": "\n".join(prompt_lines),
-        "next_step": "ask_field",
+        "next_step": "add_ask_field",
         "collected": collected,
-        "current_field_index": idx
+        "current_field_index": idx,
+        "intent": "add",
     }
 
 
-def confirm_deploy_node(state: RuleAssistantState):
+def add_confirm_deploy_node(state: RuleAssistantState):
+    """Confirm deploy, allow edits, or cancel."""
 
     message = state["message"].lower().strip()
     collected = state["collected"]
@@ -434,11 +429,21 @@ def confirm_deploy_node(state: RuleAssistantState):
     rule_type = collected["rule_type"]
     fields_needed = RULE_TYPES[rule_type]["fields_needed"]
 
-    # Handle general edit intent — "i want to edit", "change", "modify", etc.
+    # ── Cancel / restart ──
+    cancel_words = ["cancel", "nevermind", "never mind", "abort", "stop", "restart"]
+    if any(message == w or message.startswith(w) for w in cancel_words):
+        return {
+            "response": "❌ Rule creation cancelled.\n\nWhat would you like to do?\n\n➕ **Add** a new rule\n🗑️ **Delete** an existing rule\n✏️ **Edit** a rule",
+            "next_step": "initial",
+            "collected": {},
+            "current_field_index": 0,
+            "intent": None,
+        }
+
+    # ── Handle edit intent ──
     edit_words = ["change", "modify", "update", "want to edit", "i want to edit", "edit this", "want to change", "set ", "instead of", "make it"]
     if any(w in message for w in edit_words) or message.startswith("edit"):
 
-        # Try to use LLM to parse natural language edit request
         edit_intent = extract_edit_intent_from_text(message, fields_needed)
         
         if edit_intent and edit_intent.get("field") in fields_needed:
@@ -446,7 +451,6 @@ def confirm_deploy_node(state: RuleAssistantState):
             new_val = edit_intent.get("value")
             
             if new_val is not None:
-                # User provided a value (e.g., "set value to 6000")
                 try:
                     if field == "name":
                         validated_val = extract_rule_name(str(new_val))
@@ -463,7 +467,6 @@ def confirm_deploy_node(state: RuleAssistantState):
                     
                     collected[field] = validated_val
                     
-                    # Generate updated preview
                     op_label = OP_LABELS.get(collected.get("operator", ""), "")
                     field_name = collected.get("field_name", "")
                     field_label = ALL_FIELDS.get(field_name, {}).get("label", field_name)
@@ -485,13 +488,13 @@ or **edit <field_name>** to change any value."""
 
                     return {
                         "response": preview,
-                        "next_step": "confirm_deploy",
+                        "next_step": "add_confirm_deploy",
                         "collected": collected,
-                        "current_field_index": len(fields_needed)
+                        "current_field_index": len(fields_needed),
+                        "intent": "add",
                     }
                     
                 except Exception as e:
-                    # Show error and ask for the value again properly
                     hint = ""
                     if field == "field_name":
                         hint = f"\n\nAvailable fields:\n{format_available_fields()}"
@@ -501,13 +504,13 @@ or **edit <field_name>** to change any value."""
                     idx = fields_needed.index(field)
                     return {
                         "response": f"I tried to set **{field}** to {new_val}, but got an error: {str(e)}\n\nPlease enter a valid value for **{field}**{hint}",
-                        "next_step": "ask_field",
+                        "next_step": "add_ask_field",
                         "collected": collected,
-                        "current_field_index": idx
+                        "current_field_index": idx,
+                        "intent": "add",
                     }
 
             else:
-                # User just said to edit a specific field but didn't provide new value
                 hint = ""
                 if field == "field_name":
                     hint = f"\n\nAvailable fields:\n{format_available_fields()}"
@@ -519,12 +522,13 @@ or **edit <field_name>** to change any value."""
                 idx = fields_needed.index(field)
                 return {
                     "response": f"Enter new value for **{field}**{hint}",
-                    "next_step": "ask_field",
+                    "next_step": "add_ask_field",
                     "collected": collected,
-                    "current_field_index": idx
+                    "current_field_index": idx,
+                    "intent": "add",
                 }
 
-        # Generic "edit" or could not determine field — show all editable fields
+        # Generic edit — show all fields
         lines = ["Which field would you like to edit?\n"]
         for i, fn in enumerate(fields_needed):
             val = collected.get(fn, "—")
@@ -537,16 +541,16 @@ or **edit <field_name>** to change any value."""
 
         return {
             "response": "\n".join(lines),
-            "next_step": "confirm_deploy",
-            "collected": collected
+            "next_step": "add_confirm_deploy",
+            "collected": collected,
+            "intent": "add",
         }
 
-    # Handle deploy intent
+    # ── Deploy ──
     deploy_words = ["deploy", "yes", "confirm", "looks good", "go ahead", "create", "save", "ok", "done", "ship it", "lgtm"]
     if any(message == w or message.startswith(w) for w in deploy_words):
 
         config = {}
-
         if "field_name" in collected:
             config["field_name"] = collected["field_name"]
         if "operator" in collected:
@@ -568,11 +572,13 @@ or **edit <field_name>** to change any value."""
             "next_step": "deploy",
             "rule_data": rule_data,
             "collected": collected,
-            "current_field_index": 0
+            "current_field_index": 0,
+            "intent": "add",
         }
 
     return {
         "response": "Type **deploy** to create the rule, or **edit <field>** to change a value.\n\nEditable fields: " + ", ".join(fields_needed),
-        "next_step": "confirm_deploy",
-        "collected": collected
+        "next_step": "add_confirm_deploy",
+        "collected": collected,
+        "intent": "add",
     }

@@ -5,19 +5,126 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	greet(greet)
-	ask_type(ask_type)
-	ask_field(ask_field)
-	confirm_deploy(confirm_deploy)
-	__end__([<p>__end__</p>]):::last
-	__start__ -.-> ask_field;
-	__start__ -.-> ask_type;
-	__start__ -.-> confirm_deploy;
-	__start__ -.-> greet;
-	ask_field --> __end__;
-	ask_type --> __end__;
-	confirm_deploy --> __end__;
-	greet --> __end__;
+	intent_classifier(intent_classifier)
+	fallback(fallback)
+	add_greet(add_greet)
+	add_ask_type(add_ask_type)
+	add_ask_field(add_ask_field)
+	add_confirm_deploy(add_confirm_deploy)
+	delete_identify(delete_identify)
+	delete_select(delete_select)
+	delete_confirm(delete_confirm)
+	edit_stub(edit_stub)
+	__start__ -.-> add_ask_field;
+	__start__ -.-> add_ask_type;
+	__start__ -.-> add_confirm_deploy;
+	__start__ -.-> add_greet;
+	__start__ -.-> delete_confirm;
+	__start__ -.-> delete_identify;
+	__start__ -.-> delete_select;
+	__start__ -.-> edit_stub;
+	__start__ -.-> fallback;
+	__start__ -.-> intent_classifier;
+	add_ask_field -.-> add_ask_type;
+	add_ask_field -.-> add_confirm_deploy;
+	add_ask_field -.-> add_greet;
+	add_ask_field -.-> delete_confirm;
+	add_ask_field -.-> delete_identify;
+	add_ask_field -.-> delete_select;
+	add_ask_field -.-> edit_stub;
+	add_ask_field -.-> fallback;
+	add_ask_field -.-> intent_classifier;
+	add_ask_type -.-> add_ask_field;
+	add_ask_type -.-> add_confirm_deploy;
+	add_ask_type -.-> add_greet;
+	add_ask_type -.-> delete_confirm;
+	add_ask_type -.-> delete_identify;
+	add_ask_type -.-> delete_select;
+	add_ask_type -.-> edit_stub;
+	add_ask_type -.-> fallback;
+	add_ask_type -.-> intent_classifier;
+	add_confirm_deploy -.-> add_ask_field;
+	add_confirm_deploy -.-> add_ask_type;
+	add_confirm_deploy -.-> add_greet;
+	add_confirm_deploy -.-> delete_confirm;
+	add_confirm_deploy -.-> delete_identify;
+	add_confirm_deploy -.-> delete_select;
+	add_confirm_deploy -.-> edit_stub;
+	add_confirm_deploy -.-> fallback;
+	add_confirm_deploy -.-> intent_classifier;
+	add_greet -.-> add_ask_field;
+	add_greet -.-> add_ask_type;
+	add_greet -.-> add_confirm_deploy;
+	add_greet -.-> delete_confirm;
+	add_greet -.-> delete_identify;
+	add_greet -.-> delete_select;
+	add_greet -.-> edit_stub;
+	add_greet -.-> fallback;
+	add_greet -.-> intent_classifier;
+	delete_confirm -.-> add_ask_field;
+	delete_confirm -.-> add_ask_type;
+	delete_confirm -.-> add_confirm_deploy;
+	delete_confirm -.-> add_greet;
+	delete_confirm -.-> delete_identify;
+	delete_confirm -.-> delete_select;
+	delete_confirm -.-> edit_stub;
+	delete_confirm -.-> fallback;
+	delete_confirm -.-> intent_classifier;
+	delete_identify -.-> add_ask_field;
+	delete_identify -.-> add_ask_type;
+	delete_identify -.-> add_confirm_deploy;
+	delete_identify -.-> add_greet;
+	delete_identify -.-> delete_confirm;
+	delete_identify -.-> delete_select;
+	delete_identify -.-> edit_stub;
+	delete_identify -.-> fallback;
+	delete_identify -.-> intent_classifier;
+	delete_select -.-> add_ask_field;
+	delete_select -.-> add_ask_type;
+	delete_select -.-> add_confirm_deploy;
+	delete_select -.-> add_greet;
+	delete_select -.-> delete_confirm;
+	delete_select -.-> delete_identify;
+	delete_select -.-> edit_stub;
+	delete_select -.-> fallback;
+	delete_select -.-> intent_classifier;
+	edit_stub -.-> add_ask_field;
+	edit_stub -.-> add_ask_type;
+	edit_stub -.-> add_confirm_deploy;
+	edit_stub -.-> add_greet;
+	edit_stub -.-> delete_confirm;
+	edit_stub -.-> delete_identify;
+	edit_stub -.-> delete_select;
+	edit_stub -.-> fallback;
+	edit_stub -.-> intent_classifier;
+	fallback -.-> add_ask_field;
+	fallback -.-> add_ask_type;
+	fallback -.-> add_confirm_deploy;
+	fallback -.-> add_greet;
+	fallback -.-> delete_confirm;
+	fallback -.-> delete_identify;
+	fallback -.-> delete_select;
+	fallback -.-> edit_stub;
+	fallback -.-> intent_classifier;
+	intent_classifier -.-> add_ask_field;
+	intent_classifier -.-> add_ask_type;
+	intent_classifier -.-> add_confirm_deploy;
+	intent_classifier -.-> add_greet;
+	intent_classifier -.-> delete_confirm;
+	intent_classifier -.-> delete_identify;
+	intent_classifier -.-> delete_select;
+	intent_classifier -.-> edit_stub;
+	intent_classifier -.-> fallback;
+	add_ask_field -.-> add_ask_field;
+	add_ask_type -.-> add_ask_type;
+	add_confirm_deploy -.-> add_confirm_deploy;
+	add_greet -.-> add_greet;
+	delete_confirm -.-> delete_confirm;
+	delete_identify -.-> delete_identify;
+	delete_select -.-> delete_select;
+	edit_stub -.-> edit_stub;
+	fallback -.-> fallback;
+	intent_classifier -.-> intent_classifier;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc

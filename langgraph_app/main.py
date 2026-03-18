@@ -215,7 +215,8 @@ RULE_TYPE_FIELDS = {
 @app.post("/rules/ai-assist")
 async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_current_user)):
     """
-    AI assistant for rule creation using LangGraph — conversational flow.
+    AI assistant for rule management using LangGraph — multi-agent conversational flow.
+    Supports: add, delete, edit (stub) intents.
     """
     try:
         ctx = request.context or {}
@@ -228,19 +229,21 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
             "collected": ctx.get("collected", {}),
             "current_field_index": ctx.get("current_field_index", 0),
             "rule_data": None,
+            # ── Multi-agent fields ──
+            "intent": ctx.get("intent"),
+            "available_rules": rules_cache.get_rules(),
+            "delete_rule_id": ctx.get("delete_rule_id"),
+            "error_count": ctx.get("error_count", 0),
         }
         
         result = rule_assistant_app.invoke(initial_state)
         
-        # If graph says deploy, do the DB insert here
+        # ── Handle __DEPLOY__ signal (add flow) ──
         if result.get("response") == "__DEPLOY__" and result.get("rule_data"):
             rule_data = result["rule_data"]
-            # Generate ID if not provided
             if not rule_data.get("id"):
                 rule_data["id"] = rules_cache.generate_rule_id()
-            # Update cache immediately
             rules_cache.add(rule_data)
-            # Persist to DB in background
             asyncio.create_task(rules_cache.bg_upsert(rule_data))
             return {
                 "status": "success",
@@ -248,15 +251,42 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
                 "next_step": "done",
                 "collected": {},
                 "current_field_index": 0,
+                "intent": None,
+                "delete_rule_id": None,
+                "error_count": 0,
                 "rule": rule_data,
+            }
+
+        # ── Handle __DELETE__ signal (delete flow) ──
+        if result.get("response") == "__DELETE__" and result.get("delete_rule_id"):
+            rule_id = result["delete_rule_id"]
+            # Find rule name before removing
+            all_rules = rules_cache.get_rules()
+            rule_name = next((r.get("name", "Unknown") for r in all_rules if r.get("id") == rule_id), "Unknown")
+            # Remove from cache immediately
+            rules_cache.remove(rule_id)
+            # Persist to DB in background
+            asyncio.create_task(rules_cache.bg_delete(rule_id))
+            return {
+                "status": "success",
+                "response": f"✅ Rule **{rule_name}** (`{rule_id}`) has been deleted successfully!\n\nThe rule has been removed from the system.",
+                "next_step": "done",
+                "collected": {},
+                "current_field_index": 0,
+                "intent": None,
+                "delete_rule_id": None,
+                "error_count": 0,
             }
         
         return {
             "status": "success",
-            "response": result.get("response", "I'm not sure what you need. Try describing the rule you'd like to create!"),
+            "response": result.get("response", "I'm not sure what you need. Try saying **add**, **delete**, or **edit** a rule!"),
             "next_step": result.get("next_step", "initial"),
             "collected": result.get("collected", {}),
             "current_field_index": result.get("current_field_index", 0),
+            "intent": result.get("intent"),
+            "delete_rule_id": result.get("delete_rule_id"),
+            "error_count": result.get("error_count", 0),
         }
 
     except Exception as e:

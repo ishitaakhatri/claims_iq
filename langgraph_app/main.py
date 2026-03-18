@@ -19,7 +19,7 @@ from .services.database import (
 )
 from .services.rules_cache import rules_cache
 from .auth import get_current_user
-from .graph.rule_assistant import rule_assistant_app
+from .graph.RulesGraph import rule_assistant_app
 import json
 
 app = FastAPI(title="ClaimsIQ LangGraph API")

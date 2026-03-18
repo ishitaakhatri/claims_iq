@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from langgraph_app.services.database import get_all_rules
 from langgraph_app.graph.graph import create_graph
-from langgraph_app.graph.rule_assistant import rule_assistant_app
+from langgraph_app.graph.RulesGraph import rule_assistant_app
 
 def generate_claims_graph():
     print("Generating Claims Process Graph...")

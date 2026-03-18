@@ -1,99 +1,19 @@
 """
-LangGraph-based Rule Assistant — Conversational field-by-field flow.
+RulesGraph — LLM helpers and graph node functions.
 """
 
 import os
 import json
-import re
-from typing import TypedDict, Optional, Dict, Any
-from langgraph.graph import StateGraph, START, END
 from openai import OpenAI
 
+from .state import (
+    RuleAssistantState,
+    ALL_FIELDS, RULE_TYPES, OP_LABELS,
+    format_available_fields, format_available_operators,
+    validate_field_name, validate_operator, validate_weight, validate_value,
+)
+
 client = OpenAI(api_key=os.getenv("VITE_OPENAI_API_KEY"))
-
-# ─────────────────────────────────────────────────────────
-# Fields
-# ─────────────────────────────────────────────────────────
-
-ALL_FIELDS = {
-    "claimAmount": {"label": "Claim Amount", "type": "number"},
-    "completeness": {"label": "Document Completeness", "type": "number"},
-    "fraudScore": {"label": "Fraud Score", "type": "number"},
-    "claimNumber": {"label": "Claim Number", "type": "string"},
-    "policyNumber": {"label": "Policy Number", "type": "string"},
-    "claimantName": {"label": "Claimant Name", "type": "string"},
-    "claimantId": {"label": "Claimant ID", "type": "string"},
-    "claimType": {"label": "Claim Type", "type": "string"},
-    "policyStatus": {"label": "Policy Status", "type": "string"},
-    "incidentDate": {"label": "Incident Date", "type": "string"},
-    "filingDate": {"label": "Filing Date", "type": "string"},
-    "providerName": {"label": "Provider Name", "type": "string"},
-    "contactNumber": {"label": "Contact Number", "type": "string"},
-}
-
-RULE_TYPES = {
-    "threshold": {
-        "label": "Threshold Rule",
-        "fields_needed": ["name","description","field_name","operator","value","weight"],
-        "operators": ["lte","lt","gte","gt"],
-    },
-    "comparison": {
-        "label": "Comparison Rule",
-        "fields_needed": ["name","description","field_name","operator","value","weight"],
-        "operators": ["eq"],
-    },
-    "cross_field": {
-        "label": "Cross Field Rule",
-        "fields_needed": ["name","description","field_name","operator","weight"],
-        "operators": ["not_duplicate"],
-    }
-}
-
-OP_LABELS = {
-    "lte":"≤",
-    "lt":"<",
-    "gte":"≥",
-    "gt":">",
-    "eq":"=",
-    "not_duplicate":"NOT DUPLICATE"
-}
-
-# ─────────────────────────────────────────────────────────
-# Field Helpers
-# ─────────────────────────────────────────────────────────
-
-def get_numeric_fields():
-    return [k for k, v in ALL_FIELDS.items() if v["type"] == "number"]
-
-def get_string_fields():
-    return [k for k, v in ALL_FIELDS.items() if v["type"] == "string"]
-
-def format_available_fields():
-    numeric = get_numeric_fields()
-    string = get_string_fields()
-    return (
-        f"  📊 Numeric: {', '.join(numeric)}\n"
-        f"  📝 Text: {', '.join(string)}"
-    )
-
-def format_available_operators(rule_type):
-    ops = RULE_TYPES[rule_type]["operators"]
-    labels = [f"{OP_LABELS.get(op, op)} ({op})" for op in ops]
-    return ", ".join(labels)
-
-
-# ─────────────────────────────────────────────────────────
-# State
-# ─────────────────────────────────────────────────────────
-
-class RuleAssistantState(TypedDict):
-    message: str
-    context: dict
-    response: str
-    next_step: str
-    collected: dict
-    current_field_index: int
-    rule_data: Optional[Dict[str, Any]]
 
 # ─────────────────────────────────────────────────────────
 # LLM Helpers
@@ -215,76 +135,6 @@ def extract_edit_intent_from_text(message, fields_needed):
         return json.loads(res.choices[0].message.content)
     except:
         return None
-
-
-# ─────────────────────────────────────────────────────────
-# Validation
-# ─────────────────────────────────────────────────────────
-
-def normalize_string(s: str) -> str:
-    """Normalize string by removing spaces, non-alphanumeric chars, forcing lowercase, and stripping trailing 's'."""
-    val = re.sub(r'[^a-zA-Z0-9]', '', str(s)).lower()
-    if val.endswith('s') and len(val) > 1 and not val.endswith('ss'):
-        val = val[:-1]
-    return val
-
-
-def validate_field_name(value):
-
-    if value in ALL_FIELDS:
-        return value
-
-    normalized_input = normalize_string(value)
-    
-    for valid_field, field_data in ALL_FIELDS.items():
-        if normalized_input == normalize_string(valid_field):
-            return valid_field
-            
-        label = field_data["label"]
-        if normalized_input == normalize_string(label):
-            return valid_field
-
-    raise ValueError(
-        f"Invalid field '{value}'. Choose one of: {', '.join(ALL_FIELDS.keys())}"
-    )
-
-
-def validate_operator(op, rule_type):
-
-    allowed = RULE_TYPES[rule_type]["operators"]
-
-    if op not in allowed:
-        raise ValueError(
-            f"Invalid operator. Allowed: {', '.join(allowed)}"
-        )
-
-    return op
-
-
-def validate_weight(value):
-
-    try:
-        w = int(value)
-    except:
-        raise ValueError("Weight must be a number.")
-
-    if not 1 <= w <= 100:
-        raise ValueError("Weight must be between 1 and 100.")
-
-    return w
-
-
-def validate_value(field_name,value):
-
-    field_type = ALL_FIELDS[field_name]["type"]
-
-    if field_type == "number":
-        try:
-            return float(value)
-        except:
-            raise ValueError(f"{field_name} must be numeric")
-
-    return value
 
 
 # ─────────────────────────────────────────────────────────
@@ -726,54 +576,3 @@ or **edit <field_name>** to change any value."""
         "next_step": "confirm_deploy",
         "collected": collected
     }
-
-
-# ─────────────────────────────────────────────────────────
-# Graph
-# ─────────────────────────────────────────────────────────
-
-def route(state:RuleAssistantState):
-
-    step = state["context"].get("step","initial")
-
-    if step=="ask_type":
-        return "ask_type"
-
-    if step=="ask_field":
-        return "ask_field"
-
-    if step=="confirm_deploy":
-        return "confirm_deploy"
-
-    return "greet"
-
-
-def build_rule_assistant_graph():
-
-    workflow = StateGraph(RuleAssistantState)
-
-    workflow.add_node("greet",greet_node)
-    workflow.add_node("ask_type",ask_type_node)
-    workflow.add_node("ask_field",ask_field_node)
-    workflow.add_node("confirm_deploy",confirm_deploy_node)
-
-    workflow.add_conditional_edges(
-        START,
-        route,
-        {
-            "greet":"greet",
-            "ask_type":"ask_type",
-            "ask_field":"ask_field",
-            "confirm_deploy":"confirm_deploy"
-        }
-    )
-
-    workflow.add_edge("greet",END)
-    workflow.add_edge("ask_type",END)
-    workflow.add_edge("ask_field",END)
-    workflow.add_edge("confirm_deploy",END)
-
-    return workflow.compile()
-
-
-rule_assistant_app = build_rule_assistant_graph()

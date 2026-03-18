@@ -128,6 +128,7 @@ def create_rule_node(base_rule: dict):
 
         # Handle Duplicate Check (BR006) specifically with Database
         if rule_id == "BR006":
+            user_id = state.get("user_id")
             policy_number = extracted_data.get("policyNumber")
             claimant_id = extracted_data.get("claimantId")
             incident_date = extracted_data.get("incidentDate")

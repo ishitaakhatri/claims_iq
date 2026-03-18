@@ -280,32 +280,12 @@ export default function ClaimsProcessor() {
     try {
       const token = await getToken();
 
-      // Refresh rules from DB before processing to get latest enabled/disabled states
-      const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
-      let latestConfig = ruleConfig;
-      let latestRules = activeRules;
-      try {
-        const rulesRes = await fetch(`${apiUrl}/rules`, {
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-        const rulesData = await rulesRes.json();
-        if (rulesData.status === "success" && rulesData.rules) {
-          latestRules = rulesData.rules;
-          setActiveRules(latestRules);
-          const freshConfig = {};
-          latestRules.forEach(rule => {
-            if (rule.is_active) {
-              freshConfig[rule.id] = { enabled: true, threshold: rule.config?.value || 0 };
-            }
-          });
-          setRuleConfig(freshConfig);
-          latestConfig = freshConfig;
-        }
-      } catch (err) {
-        console.warn("⚠️ [Process] Could not refresh rules, using cached config:", err);
-      }
+      // Rules are already cached in state (loaded at login, updated on mutations)
+      // Backend also serves from its own in-memory cache — zero DB calls
+      const latestConfig = ruleConfig;
+      const latestRules = activeRules;
 
-      // Build dynamic node messages from latest active rules
+      // Build dynamic node messages from cached active rules
       const currentNodeMessages = buildNodeMessages(latestRules.filter(r => r.is_active));
 
       console.log("📥 [Process] Converting file to base64...");
@@ -322,6 +302,18 @@ export default function ClaimsProcessor() {
           if (status === 'saved' || status === 'save_error') {
             setTimeout(() => setSaveStatus(null), 3500); // auto-hide after 3.5s
           }
+          if (status === 'saved' && data.blob_uri) {
+            // Update the just-added claim record with the backend's blob URL and real ID
+            setClaimsLog(prev => prev.map((item, index) => {
+              if (index === 0 && !item.blob_uri) {
+                return { ...item, id: data.claim_id || item.id, blob_uri: data.blob_uri };
+              }
+              return item;
+            }));
+            
+            // If the user happens to have this claim open right now, update the selected log too
+            setSelectedLog(prev => (prev && prev.id === prev.id) ? { ...prev, blob_uri: data.blob_uri } : prev);
+          }
           return; // don't add to processing logs
         }
 
@@ -334,7 +326,7 @@ export default function ClaimsProcessor() {
             newLogs[existingIndex] = {
               ...newLogs[existingIndex],
               status,
-              time: new Date().toLocaleTimeString()
+              time: new Date().toISOString()
             };
             return newLogs;
           } else {
@@ -342,7 +334,7 @@ export default function ClaimsProcessor() {
               node,
               message,
               status,
-              time: new Date().toLocaleTimeString()
+              time: new Date().toISOString()
             }];
           }
         });
@@ -370,7 +362,7 @@ export default function ClaimsProcessor() {
         claimant: extracted_data.claimantName || "Unknown",
         amount: extracted_data.claimAmount,
         routing: evaluation.routing,
-        time: new Date().toLocaleTimeString(),
+        time: new Date().toISOString(),
         confidence: evaluation.confidence,
         extracted: extracted_data, // Store full extracted data
         evaluation: evaluation,    // Store full evaluation
@@ -990,7 +982,11 @@ export default function ClaimsProcessor() {
                                       {log.message} {isActive && "..."}
                                     </div>
                                     <div style={{ fontSize: 10, color: colors.muted, fontFamily: "IBM Plex Mono", marginTop: 2, opacity: 0.8 }}>
-                                      {log.time}
+                                      {(() => {
+                                        if (!log.time || log.time === "N/A") return "N/A";
+                                        const d = new Date(log.time);
+                                        return isNaN(d.getTime()) ? log.time : d.toLocaleString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                                      })()}
                                     </div>
                                   </div>
                                 </div>
@@ -1587,7 +1583,13 @@ export default function ClaimsProcessor() {
                             <span style={{ fontWeight: 700, color: c.routing === "STP" ? "#10b981" : "#ef4444" }}>
                               {c.routing === "STP" ? "✓ STP" : "⚠ ESC"}
                             </span>
-                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>{c.time && c.time !== "N/A" ? new Date(c.time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : "N/A"}</span>
+                            <span style={{ color: colors.muted, fontFamily: "IBM Plex Mono", fontSize: 9 }}>
+                              {(() => {
+                                if (!c.time || c.time === "N/A") return "N/A";
+                                const d = new Date(c.time);
+                                return isNaN(d.getTime()) ? c.time : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                              })()}
+                            </span>
                           </div>
                           <div style={{ color: "#d1d5db", fontWeight: 500, marginBottom: 2 }}>{c.claimant}</div>
                           <div style={{ color: colors.muted, fontSize: 10 }}>
@@ -1642,7 +1644,11 @@ export default function ClaimsProcessor() {
                   <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: colors.muted, letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>CLAIM HISTORY</div>
                   <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: colors.text }}>{selectedLog.claimant}</h2>
                   <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
-                    Claim #{selectedLog.claim} · {selectedLog.time}
+                    Claim #{selectedLog.claim} · {(() => {
+                      if (!selectedLog.time || selectedLog.time === "N/A") return "N/A";
+                      const d = new Date(selectedLog.time);
+                      return isNaN(d.getTime()) ? selectedLog.time : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+                    })()}
                   </div>
                   {selectedLog.submitterEmail && (
                     <div style={{ fontSize: 11, color: colors.accent, marginTop: 6, fontFamily: "IBM Plex Mono", fontWeight: 700 }}>
@@ -1701,6 +1707,35 @@ export default function ClaimsProcessor() {
                     }}>
                       {selectedLog.extracted.fraudScore}/100
                     </div>
+                  </div>
+                )}
+                {selectedLog.blob_uri && (
+                  <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+                    <a href={selectedLog.blob_uri} target="_blank" rel="noopener noreferrer" style={{
+                      padding: "8px 16px",
+                      background: "transparent",
+                      border: `1px solid ${colors.accent}`,
+                      borderRadius: 8,
+                      color: colors.accent,
+                      textDecoration: "none",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: "'Barlow', sans-serif",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(245, 158, 11, 0.1)";
+                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(245, 158, 11, 0.2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}>
+                      📄 View Document
+                    </a>
                   </div>
                 )}
               </div>

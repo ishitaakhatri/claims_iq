@@ -1,6 +1,8 @@
 import os
 import uuid
 import json
+import time
+import asyncio
 from datetime import datetime, timezone
 import psycopg2
 import asyncpg
@@ -8,10 +10,15 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1  # seconds
+
 
 def get_db_connection():
     """
     Creates and returns a PostgreSQL connection using environment variables.
+    Retries up to MAX_RETRIES times with exponential backoff for transient errors
+    (e.g. DNS resolution failures on Azure).
     """
     host = os.getenv("DB_HOST", "").strip()
     user = os.getenv("DB_USER", "").strip()
@@ -20,15 +27,28 @@ def get_db_connection():
     password = os.getenv("DB_PASSWORD", "").strip()
     sslmode = os.getenv("DB_SSLMODE", "require").strip()
     
-    print(f"[Database] Connecting to {host} as {user}...")
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password,
-        sslmode=sslmode,
-    )
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            print(f"[Database] Connecting to {host} as {user}...")
+            return psycopg2.connect(
+                host=host,
+                port=port,
+                dbname=dbname,
+                user=user,
+                password=password,
+                sslmode=sslmode,
+            )
+        except psycopg2.OperationalError as e:
+            last_error = e
+            if attempt < MAX_RETRIES:
+                delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                print(f"[Database] Connection attempt {attempt}/{MAX_RETRIES} failed: {e}")
+                print(f"[Database] Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                print(f"[Database] All {MAX_RETRIES} connection attempts failed.")
+    raise last_error
 
 
 def save_claim_to_db(
@@ -245,9 +265,22 @@ async def async_check_duplicate_claim(policy_number: str, claimant_id: str, inci
         sslmode = os.getenv("DB_SSLMODE", "require").strip()
 
         ssl_val = True if sslmode == "require" else sslmode
-        conn = await asyncpg.connect(
-            host=host, port=port, user=user, password=password, database=dbname, ssl=ssl_val
-        )
+
+        # Retry loop for transient DNS/connection errors
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                conn = await asyncpg.connect(
+                    host=host, port=port, user=user, password=password, database=dbname, ssl=ssl_val
+                )
+                break  # connected successfully
+            except OSError as e:
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    print(f"[Database-Async] Connection attempt {attempt}/{MAX_RETRIES} failed: {e}")
+                    print(f"[Database-Async] Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise
 
         where_clause = " AND ".join(fields_to_check)
         query = f"SELECT COUNT(*) FROM claims_history WHERE {where_clause}"

@@ -17,6 +17,7 @@ from .services.database import (
     register_session, check_active_session, terminate_session,
     delete_claim, get_db_connection
 )
+from .services.rules_cache import rules_cache
 from .auth import get_current_user
 from .graph.rule_assistant import rule_assistant_app
 import json
@@ -127,9 +128,9 @@ async def session_terminate(request: SessionRequest, user_info: dict = Depends(g
 
 @app.get("/rules")
 async def list_rules(user_info: dict = Depends(get_current_user)):
-    """Fetch all business rules from the database."""
+    """Fetch all business rules — served from in-memory cache."""
     try:
-        rules = get_all_rules()
+        rules = rules_cache.get_rules()
         return {"status": "success", "rules": rules}
     except Exception as e:
         print(f"[API] Rules Fetch Error: {e}")
@@ -138,10 +139,17 @@ async def list_rules(user_info: dict = Depends(get_current_user)):
 
 @app.post("/rules")
 async def create_rule(request: RuleRequest, user_info: dict = Depends(get_current_user)):
-    """Create a new business rule."""
+    """Create a new business rule — updates cache instantly, persists to DB in background."""
     try:
-        rule = upsert_rule(request.dict())
-        return {"status": "success", "rule": rule}
+        rule_data = request.dict()
+        # Generate ID if not provided
+        if not rule_data.get("id"):
+            rule_data["id"] = rules_cache.generate_rule_id()
+        # Update cache immediately
+        rules_cache.add(rule_data)
+        # Persist to DB in background
+        asyncio.create_task(rules_cache.bg_upsert(rule_data))
+        return {"status": "success", "rule": rule_data}
     except Exception as e:
         print(f"[API] Rule Create Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -149,12 +157,15 @@ async def create_rule(request: RuleRequest, user_info: dict = Depends(get_curren
 
 @app.put("/rules/{rule_id}")
 async def update_rule(rule_id: str, request: RuleRequest, user_info: dict = Depends(get_current_user)):
-    """Update an existing business rule."""
+    """Update an existing business rule — updates cache instantly, persists to DB in background."""
     try:
         data = request.dict()
         data["id"] = rule_id
-        rule = upsert_rule(data)
-        return {"status": "success", "rule": rule}
+        # Update cache immediately
+        rules_cache.update(data)
+        # Persist to DB in background
+        asyncio.create_task(rules_cache.bg_upsert(data))
+        return {"status": "success", "rule": data}
     except Exception as e:
         print(f"[API] Rule Update Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -162,14 +173,13 @@ async def update_rule(rule_id: str, request: RuleRequest, user_info: dict = Depe
 
 @app.delete("/rules/{rule_id}")
 async def remove_rule(rule_id: str, user_info: dict = Depends(get_current_user)):
-    """Delete a business rule by ID."""
+    """Delete a business rule — removes from cache instantly, deletes from DB in background."""
     try:
-        deleted = delete_rule(rule_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Rule not found")
+        # Remove from cache immediately
+        rules_cache.remove(rule_id)
+        # Delete from DB in background
+        asyncio.create_task(rules_cache.bg_delete(rule_id))
         return {"status": "success", "deleted": rule_id}
-    except HTTPException:
-        raise
     except Exception as e:
         print(f"[API] Rule Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -224,14 +234,21 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
         
         # If graph says deploy, do the DB insert here
         if result.get("response") == "__DEPLOY__" and result.get("rule_data"):
-            saved = upsert_rule(result["rule_data"])
+            rule_data = result["rule_data"]
+            # Generate ID if not provided
+            if not rule_data.get("id"):
+                rule_data["id"] = rules_cache.generate_rule_id()
+            # Update cache immediately
+            rules_cache.add(rule_data)
+            # Persist to DB in background
+            asyncio.create_task(rules_cache.bg_upsert(rule_data))
             return {
                 "status": "success",
-                "response": f"✅ Rule **{saved['name']}** ({saved['id']}) has been deployed successfully!\n\nYou can view and edit it in the **Rule Registry** tab.",
+                "response": f"✅ Rule **{rule_data['name']}** ({rule_data['id']}) has been deployed successfully!\n\nYou can view and edit it in the **Rule Registry** tab.",
                 "next_step": "done",
                 "collected": {},
                 "current_field_index": 0,
-                "rule": saved,
+                "rule": rule_data,
             }
         
         return {
@@ -268,9 +285,8 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
         "error": None
     }
     
-    # Fetch active rules dynamically
-    all_rules = get_all_rules()
-    active_rules = [rule for rule in all_rules if rule.get("is_active", True)]
+    # Fetch active rules from cache (zero DB calls)
+    active_rules = rules_cache.get_active()
     app_graph = create_graph(active_rules)
     expected_nodes = ["ocr", "extraction", "evaluation"] + [r["id"].lower() for r in active_rules]
     
@@ -366,7 +382,7 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
                                 import psycopg2
                                 conn = get_db_connection()
                                 cur = conn.cursor()
-                                cur.execute("UPDATE claims_history SET document_url = %s WHERE id = %s", (uri, cid))
+                                cur.execute("UPDATE claims_history SET blob_uri = %s WHERE id = %s", (uri, cid))
                                 conn.commit()
                                 cur.close()
                                 print(f"[Integration] DB record updated with blob URI")
@@ -381,7 +397,7 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
                 if errors:
                     yield f"data: {json.dumps({'node': 'background_save', 'status': 'save_error', 'message': '; '.join(errors)})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'saved'})}\n\n"
+                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'saved', 'blob_uri': blob_uri, 'claim_id': claim_id})}\n\n"
                 
         except Exception as e:
             print(f"Graph Execution Error: {str(e)}")

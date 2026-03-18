@@ -89,6 +89,7 @@ export default function RulesManagement({ colors, getToken }) {
     const [loading, setLoading] = useState(true);
     const [selectedType, setSelectedType] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [ruleProcessing, setRuleProcessing] = useState(null); // null | 'updating' | 'deleting' | 'toggling' | 'deploying'
 
     // Configurator form state
     const [formName, setFormName] = useState('');
@@ -115,7 +116,7 @@ export default function RulesManagement({ colors, getToken }) {
         scrollToBottom();
     }, [messages]);
 
-    // ─── Fetch Rules from DB ───
+    // ─── Fetch Rules (served from backend cache — zero DB calls) ───
     const fetchRules = async () => {
         setLoading(true);
         try {
@@ -137,8 +138,9 @@ export default function RulesManagement({ colors, getToken }) {
         fetchRules();
     }, []);
 
-    // ─── Rule Actions ───
+    // ─── Rule Actions (cache updated instantly on backend, DB persisted async) ───
     const updateRule = async (rule) => {
+        setRuleProcessing('updating');
         try {
             const token = await getToken();
             await fetch(`${API_URL}/rules/${rule.id}`, {
@@ -151,6 +153,8 @@ export default function RulesManagement({ colors, getToken }) {
             });
         } catch (err) {
             console.error("❌ [Rules] Error updating:", err);
+        } finally {
+            setRuleProcessing(null);
         }
     };
 
@@ -179,7 +183,12 @@ export default function RulesManagement({ colors, getToken }) {
         if (!rule) return;
         const updated = { ...rule, is_active: !rule.is_active };
         setRules(prev => prev.map(r => r.id === id ? updated : r));
-        await updateRule(updated);
+        setRuleProcessing('toggling');
+        try {
+            await updateRule(updated);
+        } finally {
+            setRuleProcessing(null);
+        }
     };
 
     const updateThreshold = async (id, newValue) => {
@@ -231,6 +240,7 @@ export default function RulesManagement({ colors, getToken }) {
     const deployRule = async () => {
         if (!selectedType || !formName.trim()) return;
         setSaving(true);
+        setRuleProcessing('deploying');
         try {
             const token = await getToken();
             const res = await fetch(`${API_URL}/rules`, {
@@ -259,8 +269,10 @@ export default function RulesManagement({ colors, getToken }) {
             }
         } catch (err) {
             console.error("❌ [Rules] Error deploying:", err);
+        } finally {
+            setSaving(false);
+            setRuleProcessing(null);
         }
-        setSaving(false);
     };
 
     // ─── Chatbot ───
@@ -353,6 +365,36 @@ export default function RulesManagement({ colors, getToken }) {
                     </button>
                 ))}
             </div>
+
+            {/* ── Rules Processing Toast ── */}
+            {ruleProcessing && (
+                <div style={{
+                    padding: '12px 20px',
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: `1px solid ${colors.accent}44`,
+                    borderRadius: 12,
+                    marginBottom: 16,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    animation: 'fadeIn 0.3s ease'
+                }}>
+                    <div style={{
+                        width: 18, height: 18,
+                        border: `2.5px solid ${colors.accent}33`,
+                        borderTopColor: colors.accent,
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                    }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: colors.accent }}>
+                        {ruleProcessing === 'updating' && 'Processing rule update...'}
+                        {ruleProcessing === 'deleting' && 'Removing rule...'}
+                        {ruleProcessing === 'toggling' && 'Updating rule status...'}
+                        {ruleProcessing === 'deploying' && 'Deploying new rule...'}
+                    </span>
+                    <span style={{ fontSize: 11, color: colors.muted, marginLeft: 'auto', fontFamily: 'IBM Plex Mono' }}>CACHE + DB SYNC</span>
+                </div>
+            )}
 
             {/* ── Content Area ── */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 40 }}>

@@ -7,10 +7,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+from datetime import datetime, timedelta, timezone
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+
 def upload_to_blob(file_data_b64: str, file_name: str) -> str:
     """
     Uploads a base64-encoded file to Azure Blob Storage.
-    Returns the blob URL.
+    Generates a read-only SAS token valid for 7 days and returns the authenticated URL.
     """
     connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
@@ -38,6 +41,25 @@ def upload_to_blob(file_data_b64: str, file_name: str) -> str:
     print(f"[Blob Storage] Starting upload of {blob_name}...")
     blob_client.upload_blob(file_bytes, overwrite=True)
 
-    blob_url = blob_client.url
+    # Note: extracting account key from the connecting string
+    # A cleaner approach in prod is using Managed Identities, but this works for development
+    account_key = dict(item.split("=", 1) for item in connection_string.split(";") if item).get("AccountKey")
+    account_name = blob_service_client.account_name
+
+    if account_key and account_name:
+        sas_token = generate_blob_sas(
+            account_name=account_name,
+            container_name=container_name,
+            blob_name=blob_name,
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(days=7)
+        )
+        blob_url = f"{blob_client.url}?{sas_token}"
+    else:
+        # Fallback to the regular URL if SAS generation fails
+        blob_url = blob_client.url
+        print("[Blob Storage] Warning: Could not generate SAS token. Using raw URL.")
+
     print(f"[Blob Storage] Uploaded: {blob_url}")
     return blob_url

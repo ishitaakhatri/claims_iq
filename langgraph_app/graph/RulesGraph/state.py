@@ -69,6 +69,10 @@ class RuleAssistantState(TypedDict):
     available_rules: Optional[list]     # Rules list injected from main.py
     delete_rule_id: Optional[str]       # Target rule ID for deletion
     error_count: int                    # Consecutive error count for fallback
+    # ── Update flow fields ──
+    update_payload: Optional[Dict[str, Any]]  # {field, old_value, new_value, rule_hint}
+    update_candidates: Optional[list]         # Matched rules from candidate search
+    update_rule_id: Optional[str]             # Confirmed target rule ID for update
 
 # ─────────────────────────────────────────────────────────
 # Field Helpers

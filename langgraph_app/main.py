@@ -234,9 +234,23 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
             "available_rules": rules_cache.get_rules(),
             "delete_rule_id": ctx.get("delete_rule_id"),
             "error_count": ctx.get("error_count", 0),
+            # ── Update flow fields ──
+            "update_payload": ctx.get("update_payload"),
+            "update_candidates": ctx.get("update_candidates"),
+            "update_rule_id": ctx.get("update_rule_id"),
         }
         
+        print(f"\n[API Debug] === NEW USER MESSAGE ===")
+        print(f"[API Debug] Message: '{request.message}'")
+        print(f"[API Debug] Incoming Step: '{ctx.get('step')}'")
+        print(f"[API Debug] Intent: '{ctx.get('intent')}'")
+        
         result = rule_assistant_app.invoke(initial_state)
+
+        print(f"[API Debug] Outgoing Step: '{result.get('context', {}).get('step')}'")
+        print(f"[API Debug] Next Step: '{result.get('next_step')}'")
+        print(f"[API Debug] Generated Response: '{str(result.get('response'))[:50]}...'")
+        print(f"[API Debug] ========================\n")
         
         # ── Handle __DEPLOY__ signal (add flow) ──
         if result.get("response") == "__DEPLOY__" and result.get("rule_data"):
@@ -277,16 +291,94 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
                 "delete_rule_id": None,
                 "error_count": 0,
             }
+
+        # ── Handle __UPDATE__ signal (update flow) ──
+        if result.get("response") == "__UPDATE__" and result.get("update_rule_id"):
+            rule_id = result["update_rule_id"]
+            payload = result.get("update_payload") or {}
+            field = payload.get("field")
+            new_value = payload.get("new_value")
+
+            # Find the rule in cache
+            all_rules = rules_cache.get_rules()
+            target_rule = next((r for r in all_rules if r.get("id") == rule_id), None)
+
+            if target_rule and field and new_value is not None:
+                # Apply the update
+                updated_rule = dict(target_rule)
+                config = dict(updated_rule.get("config", {}))
+
+                # Map field to the correct location
+                if field in ("name", "description", "weight", "is_active", "rule_type"):
+                    # Rule-level property
+                    if field == "weight":
+                        updated_rule[field] = int(new_value)
+                    elif field == "is_active":
+                        updated_rule[field] = str(new_value).lower() in ("true", "1", "yes", "active")
+                    else:
+                        updated_rule[field] = new_value
+                elif field in ("field_name", "operator", "value"):
+                    # Config-level property
+                    if field == "value":
+                        # Try numeric conversion
+                        try:
+                            config[field] = float(new_value) if "." in str(new_value) else int(new_value)
+                        except (ValueError, TypeError):
+                            config[field] = new_value
+                    else:
+                        config[field] = new_value
+                    updated_rule["config"] = config
+                else:
+                    # Treat as config property
+                    config[field] = new_value
+                    updated_rule["config"] = config
+
+                # Update cache + persist
+                rules_cache.update(updated_rule)
+                asyncio.create_task(rules_cache.bg_upsert(updated_rule))
+
+                return {
+                    "status": "success",
+                    "response": f"✅ Rule **{updated_rule.get('name')}** (`{rule_id}`) updated!\n\n**{field}** → **{new_value}**\n\nWould you like to make more changes? Type **yes** or **no**.",
+                    "next_step": result.get("context", {}).get("step", "edit_confirm"),
+                    "intent": "edit",
+                    "update_rule_id": rule_id,
+                    "update_payload": None,
+                    "update_candidates": None,
+                    "error_count": 0,
+                }
+            else:
+                missing = []
+                if not target_rule:
+                    missing.append(f"rule {rule_id} not found")
+                if not field:
+                    missing.append("field not specified")
+                if new_value is None:
+                    missing.append("new value not specified")
+                return {
+                    "status": "success",
+                    "response": f"⚠️ Couldn't apply update: {', '.join(missing)}.\n\nPlease specify what to change. Example: \"set value to 6000\"",
+                    "next_step": "edit_extract",
+                    "intent": "edit",
+                    "update_rule_id": rule_id,
+                    "error_count": 0,
+                }
         
+        next_step_val = result.get("next_step")
+        if not next_step_val or next_step_val == "initial":
+            next_step_val = result.get("context", {}).get("step", "initial")
+
         return {
             "status": "success",
-            "response": result.get("response", "I'm not sure what you need. Try saying **add**, **delete**, or **edit** a rule!"),
-            "next_step": result.get("next_step", "initial"),
+            "response": str(result.get("response", "I'm not sure...")),
+            "next_step": next_step_val,
             "collected": result.get("collected", {}),
             "current_field_index": result.get("current_field_index", 0),
             "intent": result.get("intent"),
             "delete_rule_id": result.get("delete_rule_id"),
             "error_count": result.get("error_count", 0),
+            "update_payload": result.get("update_payload"),
+            "update_rule_id": result.get("update_rule_id"),
         }
 
     except Exception as e:

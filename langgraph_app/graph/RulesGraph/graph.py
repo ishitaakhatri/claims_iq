@@ -10,7 +10,7 @@ START → controller → (intent_classifier OR step node)
 import os
 import json
 from openai import OpenAI
-from langgraph.graph import StateGraph, START
+from langgraph.graph import StateGraph, START, END
 
 from .state import RuleAssistantState
 from .AddRule import (
@@ -20,7 +20,11 @@ from .AddRule import (
 from .DeleteRule import (
     delete_identify_node, delete_select_node, delete_confirm_node,
 )
-from .UpdateRule import edit_stub_node
+from .UpdateRule import (
+    edit_entry_node, edit_extract_node, edit_check_ref_node,
+    edit_retrieve_node, edit_disambiguate_node, edit_select_node,
+    edit_apply_node, edit_confirm_node, edit_ask_rule_node,
+)
 
 client = OpenAI(api_key=os.getenv("VITE_OPENAI_API_KEY"))
 
@@ -69,13 +73,8 @@ def intent_classifier_node(state: RuleAssistantState):
 
     if not intent or confidence < 0.6:
         return {
-            "response": (
-                "I'm not sure what you'd like to do.\n\n"
-                "➕ Add\n🗑️ Delete\n✏️ Edit"
-            ),
             "context": {"step": "fallback"},
             "intent": None,
-            "error_count": state.get("error_count", 0) + 1,
         }
 
     if intent == "add":
@@ -85,7 +84,7 @@ def intent_classifier_node(state: RuleAssistantState):
         return {"context": {"step": "delete_identify"}, "intent": intent}
 
     if intent == "edit":
-        return {"context": {"step": "edit_stub"}, "intent": intent}
+        return {"context": {"step": "edit_entry"}, "intent": intent}
 
     return {"context": {"step": "fallback"}}
 
@@ -122,6 +121,15 @@ def fallback_node(state: RuleAssistantState):
 
 def controller_route(state: RuleAssistantState):
     step = state.get("context", {}).get("step", "initial")
+    response_len = len(state.get("response") or "")
+    
+    print(f"[Graph Debug] controller_route evaluating -> current step: '{step}', response set? {'Yes' if response_len > 0 else 'No'}")
+
+    # Loop Breaker: If a node has generated a response for the user, 
+    # we pause the graph execution by going to END.
+    if state.get("response"):
+        print("[Graph Debug] -> Pausing execution (going to END) because a response was generated.")
+        return END
 
     routes = {
         # Add
@@ -135,14 +143,24 @@ def controller_route(state: RuleAssistantState):
         "delete_select": "delete_select",
         "delete_confirm": "delete_confirm",
 
-        # Edit
-        "edit_stub": "edit_stub",
+        # Edit (9 nodes)
+        "edit_entry": "edit_entry",
+        "edit_extract": "edit_extract",
+        "edit_check_ref": "edit_check_ref",
+        "edit_retrieve": "edit_retrieve",
+        "edit_disambiguate": "edit_disambiguate",
+        "edit_select": "edit_select",
+        "edit_apply": "edit_apply",
+        "edit_confirm": "edit_confirm",
+        "edit_ask_rule": "edit_ask_rule",
 
         # Fallback
         "fallback": "fallback",
     }
 
-    return routes.get(step, "intent_classifier")
+    target = routes.get(step, "intent_classifier")
+    print(f"[Graph Debug] -> Routing execution to node: '{target}'")
+    return target
 
 
 # ─────────────────────────────────────────────────────────
@@ -165,7 +183,15 @@ def build_rule_assistant_graph():
     workflow.add_node("delete_select", delete_select_node)
     workflow.add_node("delete_confirm", delete_confirm_node)
 
-    workflow.add_node("edit_stub", edit_stub_node)
+    workflow.add_node("edit_entry", edit_entry_node)
+    workflow.add_node("edit_extract", edit_extract_node)
+    workflow.add_node("edit_check_ref", edit_check_ref_node)
+    workflow.add_node("edit_retrieve", edit_retrieve_node)
+    workflow.add_node("edit_disambiguate", edit_disambiguate_node)
+    workflow.add_node("edit_select", edit_select_node)
+    workflow.add_node("edit_apply", edit_apply_node)
+    workflow.add_node("edit_confirm", edit_confirm_node)
+    workflow.add_node("edit_ask_rule", edit_ask_rule_node)
 
     # START → controller
     workflow.add_conditional_edges(
@@ -180,8 +206,17 @@ def build_rule_assistant_graph():
             "delete_identify": "delete_identify",
             "delete_select": "delete_select",
             "delete_confirm": "delete_confirm",
-            "edit_stub": "edit_stub",
+            "edit_entry": "edit_entry",
+            "edit_extract": "edit_extract",
+            "edit_check_ref": "edit_check_ref",
+            "edit_retrieve": "edit_retrieve",
+            "edit_disambiguate": "edit_disambiguate",
+            "edit_select": "edit_select",
+            "edit_apply": "edit_apply",
+            "edit_confirm": "edit_confirm",
+            "edit_ask_rule": "edit_ask_rule",
             "fallback": "fallback",
+            END: END,
         },
     )
 
@@ -196,7 +231,15 @@ def build_rule_assistant_graph():
         "delete_identify",
         "delete_select",
         "delete_confirm",
-        "edit_stub",
+        "edit_entry",
+        "edit_extract",
+        "edit_check_ref",
+        "edit_retrieve",
+        "edit_disambiguate",
+        "edit_select",
+        "edit_apply",
+        "edit_confirm",
+        "edit_ask_rule",
     ]
 
     for node in all_nodes:
@@ -212,8 +255,17 @@ def build_rule_assistant_graph():
                 "delete_identify": "delete_identify",
                 "delete_select": "delete_select",
                 "delete_confirm": "delete_confirm",
-                "edit_stub": "edit_stub",
+                "edit_entry": "edit_entry",
+                "edit_extract": "edit_extract",
+                "edit_check_ref": "edit_check_ref",
+                "edit_retrieve": "edit_retrieve",
+                "edit_disambiguate": "edit_disambiguate",
+                "edit_select": "edit_select",
+                "edit_apply": "edit_apply",
+                "edit_confirm": "edit_confirm",
+                "edit_ask_rule": "edit_ask_rule",
                 "fallback": "fallback",
+                END: END,
             },
         )
 

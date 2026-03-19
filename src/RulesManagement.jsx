@@ -109,6 +109,8 @@ export default function RulesManagement({ colors, getToken }) {
     const [chatIntent, setChatIntent] = useState(null);
     const [chatDeleteRuleId, setChatDeleteRuleId] = useState(null);
     const [chatErrorCount, setChatErrorCount] = useState(0);
+    const [chatUpdatePayload, setChatUpdatePayload] = useState(null);
+    const [chatUpdateRuleId, setChatUpdateRuleId] = useState(null);
     const chatEndRef = useRef(null);
 
     const scrollToBottom = () => {
@@ -306,6 +308,8 @@ export default function RulesManagement({ colors, getToken }) {
                         intent: chatIntent,
                         delete_rule_id: chatDeleteRuleId,
                         error_count: chatErrorCount,
+                        update_payload: chatUpdatePayload,
+                        update_rule_id: chatUpdateRuleId,
                     }
                 })
             });
@@ -319,6 +323,8 @@ export default function RulesManagement({ colors, getToken }) {
                 setChatIntent(data.intent || null);
                 setChatDeleteRuleId(data.delete_rule_id || null);
                 setChatErrorCount(data.error_count || 0);
+                setChatUpdatePayload(data.update_payload || null);
+                setChatUpdateRuleId(data.update_rule_id || null);
 
                 if (data.next_step === 'done') {
                     // Rule deployed or deleted — refresh registry and reset state
@@ -329,6 +335,8 @@ export default function RulesManagement({ colors, getToken }) {
                     setChatIntent(null);
                     setChatDeleteRuleId(null);
                     setChatErrorCount(0);
+                    setChatUpdatePayload(null);
+                    setChatUpdateRuleId(null);
                 }
             }
         } catch (err) {
@@ -817,6 +825,8 @@ export default function RulesManagement({ colors, getToken }) {
                                         setChatIntent(null);
                                         setChatDeleteRuleId(null);
                                         setChatErrorCount(0);
+                                        setChatUpdatePayload(null);
+                                        setChatUpdateRuleId(null);
                                         setMessages(prev => [...prev, { role: 'ai', content: 'Conversation reset. What would you like to do?\n\n➕ **Add** a new rule\n🗑️ **Delete** an existing rule\n✏️ **Edit** a rule' }]);
                                     }}
                                     style={{

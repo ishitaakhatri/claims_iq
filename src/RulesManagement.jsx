@@ -101,7 +101,7 @@ function InteractiveMessage({ content, onQuickReply, colors, collectedFieldName 
     const [selectedRules, setSelectedRules] = React.useState([]);
 
     // Detect rule list pattern: lines like "  1. 🟢 **BR001** — Rule Name"
-    const hasRuleList = /\d+\.\s+[🟢🔴]\s+\*\*[A-Z0-9]+\*\*\s+—/.test(content);
+    const hasRuleList = /\d+\.\s+(?:🟢|🔴)\s+\*\*[A-Z0-9]+\*\*\s+—/.test(content);
 
     // Detect confirm/cancel pattern
     const hasConfirmCancel = /type\s+\*\*confirm\*\*.*\*\*cancel\*\*/i.test(content) ||
@@ -144,7 +144,7 @@ function InteractiveMessage({ content, onQuickReply, colors, collectedFieldName 
     // Extract rule entries from the list
     const ruleEntries = [];
     if (hasRuleList) {
-        const ruleRegex = /\d+\.\s+([🟢🔴])\s+\*\*([A-Z0-9]+)\*\*\s+—\s+(.+)/g;
+        const ruleRegex = /\d+\.\s+(🟢|🔴)\s+\*\*([A-Z0-9]+)\*\*\s+—\s+(.+)/g;
         let match;
         while ((match = ruleRegex.exec(content)) !== null) {
             ruleEntries.push({ status: match[1], id: match[2], name: match[3].trim() });
@@ -155,7 +155,7 @@ function InteractiveMessage({ content, onQuickReply, colors, collectedFieldName 
     let textBody = content;
     if (hasRuleList) {
         textBody = textBody
-            .replace(/\d+\.\s+[🟢🔴]\s+\*\*[A-Z0-9]+\*\*\s+—\s+.+/g, '')
+            .replace(/\d+\.\s+(?:🟢|🔴)\s+\*\*[A-Z0-9]+\*\*\s+—\s+.+/g, '')
             .replace(/💡.*Rule ID.*\n?/g, '')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
@@ -472,7 +472,7 @@ function InteractiveMessage({ content, onQuickReply, colors, collectedFieldName 
                                 e.currentTarget.style.borderColor = colors.border;
                             }}
                         >
-                            <span style={{ fontSize: 16 }}>{['1️⃣','2️⃣','3️⃣'][i]}</span>
+                            <span style={{ fontSize: 16 }}>{['1️⃣', '2️⃣', '3️⃣'][i]}</span>
                             <span>
                                 <span style={{ fontWeight: 700, color: '#f9fafb' }}>{opt.label}</span>
                                 <span style={{ color: '#6b7280', fontSize: 12 }}> — {opt.desc}</span>
@@ -864,7 +864,7 @@ export default function RulesManagement({ colors, getToken }) {
 
     // Quick reply handler — sends a value directly without needing the text input
     const handleQuickReply = (value) => {
-        handleSendMessage({ preventDefault: () => {} }, value);
+        handleSendMessage({ preventDefault: () => { } }, value);
     };
 
     const inputStyle = {

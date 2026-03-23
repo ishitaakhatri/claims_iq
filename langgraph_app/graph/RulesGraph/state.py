@@ -10,19 +10,28 @@ from typing import TypedDict, Optional, Dict, Any
 # ─────────────────────────────────────────────────────────
 
 ALL_FIELDS = {
-    "claimAmount": {"label": "Claim Amount", "type": "number"},
-    "completeness": {"label": "Document Completeness", "type": "number"},
-    "fraudScore": {"label": "Fraud Score", "type": "number"},
-    "claimNumber": {"label": "Claim Number", "type": "string"},
-    "policyNumber": {"label": "Policy Number", "type": "string"},
-    "claimantName": {"label": "Claimant Name", "type": "string"},
-    "claimantId": {"label": "Claimant ID", "type": "string"},
-    "claimType": {"label": "Claim Type", "type": "string"},
-    "policyStatus": {"label": "Policy Status", "type": "string"},
-    "incidentDate": {"label": "Incident Date", "type": "string"},
-    "filingDate": {"label": "Filing Date", "type": "string"},
-    "providerName": {"label": "Provider Name", "type": "string"},
-    "contactNumber": {"label": "Contact Number", "type": "string"},
+    "claimAmount":   {"label": "Claim Amount",            "type": "number"},
+    "completeness":  {"label": "Document Completeness",   "type": "number"},
+    "fraudScore":    {"label": "Fraud Score",             "type": "number"},
+    "claimNumber":   {"label": "Claim Number",            "type": "string"},
+    "policyNumber":  {"label": "Policy Number",           "type": "string"},
+    "claimantName":  {"label": "Claimant Name",           "type": "string"},
+    "claimantId":    {"label": "Claimant ID",             "type": "string"},
+    "claimType":     {"label": "Claim Type",              "type": "string"},
+    "policyStatus":  {"label": "Policy Status",           "type": "string"},
+    "incidentDate":  {"label": "Incident Date",           "type": "date"},
+    "filingDate":    {"label": "Filing Date",             "type": "date"},
+    "providerName":  {"label": "Provider Name",           "type": "string"},
+    "contactNumber": {"label": "Contact Number",          "type": "string"},
+}
+
+# Fields available per rule type — only relevant choices shown to the user
+RULE_TYPE_FIELDS = {
+    "threshold": ["claimAmount", "completeness", "fraudScore"],
+    "comparison": ["policyStatus", "claimType", "claimantId", "policyNumber",
+                   "providerName", "incidentDate", "filingDate"],
+    "cross_field": ["claimNumber", "policyNumber", "claimantId",
+                    "incidentDate", "providerName"],
 }
 
 RULE_TYPES = {
@@ -84,13 +93,28 @@ def get_numeric_fields():
 def get_string_fields():
     return [k for k, v in ALL_FIELDS.items() if v["type"] == "string"]
 
-def format_available_fields():
-    numeric = get_numeric_fields()
-    string = get_string_fields()
-    return (
-        f"  📊 Numeric: {', '.join(numeric)}\n"
-        f"  📝 Text: {', '.join(string)}"
-    )
+def get_date_fields():
+    return [k for k, v in ALL_FIELDS.items() if v["type"] == "date"]
+
+def format_available_fields(rule_type: str = None):
+    """Return formatted field list, restricted to relevant fields for the given rule type."""
+    if rule_type and rule_type in RULE_TYPE_FIELDS:
+        allowed = RULE_TYPE_FIELDS[rule_type]
+    else:
+        allowed = list(ALL_FIELDS.keys())
+
+    numeric = [k for k in allowed if ALL_FIELDS[k]["type"] == "number"]
+    string  = [k for k in allowed if ALL_FIELDS[k]["type"] == "string"]
+    date    = [k for k in allowed if ALL_FIELDS[k]["type"] == "date"]
+
+    parts = []
+    if numeric:
+        parts.append(f"  📊 Numeric: {', '.join(numeric)}")
+    if string:
+        parts.append(f"  📝 Text: {', '.join(string)}")
+    if date:
+        parts.append(f"  📅 Date (YYYY-MM-DD): {', '.join(date)}")
+    return "\n".join(parts)
 
 def format_available_operators(rule_type):
     ops = RULE_TYPES[rule_type]["operators"]
@@ -109,24 +133,35 @@ def normalize_string(s: str) -> str:
     return val
 
 
-def validate_field_name(value):
-
+def validate_field_name(value, rule_type: str = None):
+    # Resolve the canonical field name first
     if value in ALL_FIELDS:
-        return value
+        canonical = value
+    else:
+        normalized_input = normalize_string(value)
+        canonical = None
+        for valid_field, field_data in ALL_FIELDS.items():
+            if normalized_input == normalize_string(valid_field):
+                canonical = valid_field
+                break
+            if normalized_input == normalize_string(field_data["label"]):
+                canonical = valid_field
+                break
 
-    normalized_input = normalize_string(value)
-    
-    for valid_field, field_data in ALL_FIELDS.items():
-        if normalized_input == normalize_string(valid_field):
-            return valid_field
-            
-        label = field_data["label"]
-        if normalized_input == normalize_string(label):
-            return valid_field
+    if not canonical:
+        allowed = RULE_TYPE_FIELDS.get(rule_type, list(ALL_FIELDS.keys())) if rule_type else list(ALL_FIELDS.keys())
+        raise ValueError(f"Invalid field '{value}'. Choose one of: {', '.join(allowed)}")
 
-    raise ValueError(
-        f"Invalid field '{value}'. Choose one of: {', '.join(ALL_FIELDS.keys())}"
-    )
+    # Enforce rule-type restriction
+    if rule_type and rule_type in RULE_TYPE_FIELDS:
+        if canonical not in RULE_TYPE_FIELDS[rule_type]:
+            allowed = RULE_TYPE_FIELDS[rule_type]
+            raise ValueError(
+                f"Field '{canonical}' is not valid for a {RULE_TYPES[rule_type]['label']}. "
+                f"Allowed fields: {', '.join(allowed)}"
+            )
+
+    return canonical
 
 
 def validate_operator(op, rule_type):
@@ -154,14 +189,20 @@ def validate_weight(value):
     return w
 
 
-def validate_value(field_name,value):
-
+def validate_value(field_name, value):
+    import re as _re
     field_type = ALL_FIELDS[field_name]["type"]
 
     if field_type == "number":
         try:
             return float(value)
-        except:
+        except (ValueError, TypeError):
             raise ValueError(f"{field_name} must be numeric")
+
+    if field_type == "date":
+        s = str(value).strip()
+        if not _re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+            raise ValueError(f"{field_name} must be in YYYY-MM-DD format (e.g. 2024-03-15)")
+        return s
 
     return value

@@ -58,6 +58,520 @@ function generateDescription(rule) {
     return rule.description || '';
 }
 
+// ─── Percentage Slider Component ───
+function PercentageSlider({ label, onSubmit, colors }) {
+    const [val, setVal] = React.useState(50);
+    return (
+        <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 700, marginBottom: 10, fontFamily: 'IBM Plex Mono' }}>
+                📊 {label.toUpperCase()} THRESHOLD
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <input
+                    type="range" min={0} max={100} step={1} value={val}
+                    onChange={e => setVal(Number(e.target.value))}
+                    style={{ flex: 1, accentColor: colors.accent, cursor: 'pointer', height: 4 }}
+                />
+                <span style={{
+                    minWidth: 48, textAlign: 'center', fontFamily: 'IBM Plex Mono',
+                    fontWeight: 800, fontSize: 15, color: colors.accent
+                }}>{val}%</span>
+                <button
+                    onClick={() => onSubmit(String(val))}
+                    style={{
+                        background: colors.accent, color: '#000', border: 'none',
+                        borderRadius: 8, padding: '7px 16px', fontWeight: 800,
+                        fontSize: 12, cursor: 'pointer', fontFamily: "'Barlow', sans-serif",
+                        transition: 'opacity 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                >Set</button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#4b5563', marginTop: 4, fontFamily: 'IBM Plex Mono' }}>
+                <span>0%</span><span>50%</span><span>100%</span>
+            </div>
+        </div>
+    );
+}
+
+// ─── Interactive Message Renderer ───
+// Parses AI messages and replaces text prompts with interactive UI elements
+function InteractiveMessage({ content, onQuickReply, colors, collectedFieldName }) {
+    const [selectedRules, setSelectedRules] = React.useState([]);
+
+    // Detect rule list pattern: lines like "  1. 🟢 **BR001** — Rule Name"
+    const hasRuleList = /\d+\.\s+[🟢🔴]\s+\*\*[A-Z0-9]+\*\*\s+—/.test(content);
+
+    // Detect confirm/cancel pattern
+    const hasConfirmCancel = /type\s+\*\*confirm\*\*.*\*\*cancel\*\*/i.test(content) ||
+        /type\s+\*\*yes\*\*.*\*\*no\*\*/i.test(content) ||
+        /type\s+\*\*yes\*\*\s+to\s+confirm/i.test(content);
+
+    // Detect yes/no more changes pattern
+    const hasYesNo = /type\s+\*\*yes\*\*\s+or\s+\*\*no\*\*/i.test(content);
+
+    // Detect rule type selection (1️⃣ Threshold / 2️⃣ Comparison / 3️⃣ Cross-Field)
+    const hasRuleTypeOptions = /1️⃣\s+Threshold Rule/.test(content);
+
+    // Detect field_name selection (Available fields: 📊 Numeric / 📝 Text / 📅 Date)
+    // Only show when explicitly asking for field_name, not for rule name
+    const isAskingForFieldName = /please provide \*\*field_name\*\*/i.test(content) ||
+        /step\s+\d+.*field_name/i.test(content);
+    const hasFieldOptions = isAskingForFieldName && (
+        /📊\s+Numeric:/.test(content) ||
+        /📝\s+Text:/.test(content) ||
+        /📅\s+Date/.test(content)
+    );
+
+    // Detect operator selection (Available operators: ≤ (lte), ...)
+    const hasOperatorOptions = /Available operators:/i.test(content) && /\(lte\)|\(lt\)|\(gte\)|\(gt\)|\(eq\)|\(not_duplicate\)/.test(content);
+
+    // Detect when asking for a value and the selected field is a date or percentage type
+    const DATE_FIELDS = ['incidentDate', 'filingDate'];
+    const PERCENTAGE_FIELDS = ['completeness', 'fraudScore'];
+    const isValueStep = /please provide \*\*value\*\*/i.test(content);
+    const isDateValueStep = isValueStep && DATE_FIELDS.includes(collectedFieldName);
+    const isPercentageValueStep = isValueStep && PERCENTAGE_FIELDS.includes(collectedFieldName);
+
+    // Detect deploy confirmation (Type **deploy** to create the rule)
+    const hasDeployConfirm = /type\s+\*\*deploy\*\*\s+to\s+create/i.test(content);
+
+    // Detect intent selection (add/delete/edit options)
+    const hasIntentOptions = /➕.*\*\*Add\*\*.*\n.*🗑️.*\*\*Delete\*\*.*\n.*✏️.*\*\*Edit\*\*/s.test(content) ||
+        /➕\s+add\s*\n.*🗑️\s+delete\s*\n.*✏️\s+edit/is.test(content);
+
+    // Extract rule entries from the list
+    const ruleEntries = [];
+    if (hasRuleList) {
+        const ruleRegex = /\d+\.\s+([🟢🔴])\s+\*\*([A-Z0-9]+)\*\*\s+—\s+(.+)/g;
+        let match;
+        while ((match = ruleRegex.exec(content)) !== null) {
+            ruleEntries.push({ status: match[1], id: match[2], name: match[3].trim() });
+        }
+    }
+
+    // Strip the rule list lines and action hint lines from the text body
+    let textBody = content;
+    if (hasRuleList) {
+        textBody = textBody
+            .replace(/\d+\.\s+[🟢🔴]\s+\*\*[A-Z0-9]+\*\*\s+—\s+.+/g, '')
+            .replace(/💡.*Rule ID.*\n?/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+    if (hasConfirmCancel || hasYesNo) {
+        textBody = textBody
+            .replace(/Please type \*\*confirm\*\* to apply the update or \*\*cancel\*\* to abort\./gi, '')
+            .replace(/Type \*\*confirm\*\* to apply or \*\*cancel\*\* to abort\./gi, '')
+            .replace(/Type \*\*yes\*\* to confirm or \*\*no\*\* to cancel\./gi, '')
+            .replace(/Type \*\*yes\*\* or \*\*no\*\*\./gi, '')
+            .replace(/Please confirm:.*\n?/gi, '')
+            .trim();
+    }
+    if (hasFieldOptions) {
+        textBody = textBody
+            .replace(/Available fields:\s*\n?/gi, '')
+            .replace(/📊\s+Numeric:.*\n?/g, '')
+            .replace(/📝\s+Text:.*\n?/g, '')
+            .replace(/📅\s+Date[^:]*:.*\n?/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    } else if (/📊\s+Numeric:/.test(textBody) || /📝\s+Text:/.test(textBody) || /📅\s+Date/.test(textBody)) {
+        // Name step — strip the fields block from body entirely (it's context noise)
+        textBody = textBody
+            .replace(/📝\s+Available fields for this rule type:\s*\n?/gi, '')
+            .replace(/Available fields:\s*\n?/gi, '')
+            .replace(/📊\s+Numeric:.*\n?/g, '')
+            .replace(/📝\s+Text:.*\n?/g, '')
+            .replace(/📅\s+Date[^:]*:.*\n?/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+    if (hasOperatorOptions) {
+        textBody = textBody
+            .replace(/Available operators:.*$/gim, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+    if (hasRuleTypeOptions) {
+        textBody = textBody
+            .replace(/1️⃣\s+Threshold Rule\s+—\s+.+/g, '')
+            .replace(/2️⃣\s+Comparison Rule\s+—\s+.+/g, '')
+            .replace(/3️⃣\s+Cross-Field Rule\s+—\s+.+/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+    if (hasDeployConfirm) {
+        textBody = textBody
+            .replace(/Type \*\*deploy\*\* to create the rule\s*\nor \*\*edit <field_name>\*\* to change any value\./gi, '')
+            .replace(/Type \*\*deploy\*\* to create the rule, or \*\*edit <field>\*\* to change a value\.\s*\nEditable fields:.*$/gim, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+    if (hasIntentOptions) {
+        textBody = textBody
+            .replace(/➕\s+\*\*Add\*\*.*\n?/gi, '')
+            .replace(/🗑️\s+\*\*Delete\*\*.*\n?/gi, '')
+            .replace(/✏️\s+\*\*Edit\*\*.*\n?/gi, '')
+            .replace(/➕\s+add\s*\n?/gi, '')
+            .replace(/🗑️\s+delete\s*\n?/gi, '')
+            .replace(/✏️\s+edit\s*\n?/gi, '')
+            .replace(/Type:\s*\n?/gi, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    const btnBase = {
+        border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
+        cursor: 'pointer', fontFamily: "'Barlow', sans-serif", transition: 'all 0.2s ease',
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+    };
+
+    return (
+        <div>
+            {/* Main text body */}
+            {textBody && (
+                <div
+                    style={{ whiteSpace: 'pre-wrap' }}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(textBody) }}
+                />
+            )}
+
+            {/* Multi-select rule list */}
+            {ruleEntries.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 11, color: colors.muted, fontFamily: 'IBM Plex Mono', fontWeight: 700, marginBottom: 8 }}>
+                        SELECT ONE OR MORE — CLICK TO TOGGLE
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {ruleEntries.map(rule => {
+                            const isSelected = selectedRules.includes(rule.id);
+                            return (
+                                <button
+                                    key={rule.id}
+                                    onClick={() => setSelectedRules(prev =>
+                                        prev.includes(rule.id)
+                                            ? prev.filter(id => id !== rule.id)
+                                            : [...prev, rule.id]
+                                    )}
+                                    style={{
+                                        ...btnBase,
+                                        background: isSelected ? 'rgba(239, 68, 68, 0.12)' : 'rgba(31, 41, 55, 0.8)',
+                                        border: `1.5px solid ${isSelected ? 'rgba(239, 68, 68, 0.6)' : colors.border}`,
+                                        color: isSelected ? '#f87171' : '#e5e7eb',
+                                        padding: '9px 14px',
+                                        textAlign: 'left',
+                                        justifyContent: 'flex-start',
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!isSelected) {
+                                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                                        }
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!isSelected) {
+                                            e.currentTarget.style.background = 'rgba(31, 41, 55, 0.8)';
+                                            e.currentTarget.style.borderColor = colors.border;
+                                        }
+                                    }}
+                                >
+                                    <span style={{ fontSize: 14, marginRight: 2 }}>
+                                        {isSelected ? '☑' : '☐'}
+                                    </span>
+                                    <span>{rule.status}</span>
+                                    <span style={{ fontFamily: 'IBM Plex Mono', fontSize: 11, color: isSelected ? '#f87171' : colors.accent, fontWeight: 800 }}>{rule.id}</span>
+                                    <span style={{ color: '#9ca3af', fontSize: 12 }}>—</span>
+                                    <span style={{ fontSize: 13 }}>{rule.name}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {selectedRules.length > 0 && (
+                        <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'center' }}>
+                            <button
+                                onClick={() => {
+                                    onQuickReply(`__BULK_DELETE__:${selectedRules.join(',')}`);
+                                    setSelectedRules([]);
+                                }}
+                                style={{
+                                    ...btnBase,
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1.5px solid rgba(239, 68, 68, 0.5)',
+                                    color: '#f87171',
+                                    padding: '8px 20px',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'}
+                            >
+                                🗑️ Delete {selectedRules.length} rule{selectedRules.length > 1 ? 's' : ''}
+                            </button>
+                            <button
+                                onClick={() => setSelectedRules([])}
+                                style={{
+                                    ...btnBase,
+                                    background: 'transparent',
+                                    border: `1px solid ${colors.border}`,
+                                    color: colors.muted,
+                                    padding: '8px 14px',
+                                    fontSize: 12,
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.borderColor = '#6b7280'}
+                                onMouseLeave={e => e.currentTarget.style.borderColor = colors.border}
+                            >Clear</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Confirm / Cancel buttons */}
+            {hasConfirmCancel && !hasYesNo && (
+                <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                    <button
+                        onClick={() => onQuickReply('confirm')}
+                        style={{ ...btnBase, background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid rgba(16, 185, 129, 0.5)', color: '#10b981', padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.22)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)'}
+                    >✓ Confirm</button>
+                    <button
+                        onClick={() => onQuickReply('cancel')}
+                        style={{ ...btnBase, background: 'rgba(107, 114, 128, 0.1)', border: '1.5px solid rgba(107, 114, 128, 0.3)', color: '#9ca3af', padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.1)'}
+                    >✗ Cancel</button>
+                </div>
+            )}
+
+            {/* Yes / No buttons */}
+            {hasYesNo && (
+                <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                    <button
+                        onClick={() => onQuickReply('yes')}
+                        style={{ ...btnBase, background: 'rgba(16, 185, 129, 0.12)', border: '1.5px solid rgba(16, 185, 129, 0.5)', color: '#10b981', padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.22)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)'}
+                    >✓ Yes</button>
+                    <button
+                        onClick={() => onQuickReply('no')}
+                        style={{ ...btnBase, background: 'rgba(107, 114, 128, 0.1)', border: '1.5px solid rgba(107, 114, 128, 0.3)', color: '#9ca3af', padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.1)'}
+                    >✗ No</button>
+                </div>
+            )}
+
+            {/* Field name selection buttons */}
+            {hasFieldOptions && (() => {
+                const numericMatch = content.match(/📊\s+Numeric:\s*([^\n]+)/);
+                const textMatch = content.match(/📝\s+Text:\s*([^\n]+)/);
+                const dateMatch = content.match(/📅\s+Date[^:]*:\s*([^\n]+)/);
+                const numericFields = numericMatch ? numericMatch[1].split(',').map(f => f.trim()).filter(Boolean) : [];
+                const textFields = textMatch ? textMatch[1].split(',').map(f => f.trim()).filter(Boolean) : [];
+                const dateFields = dateMatch ? dateMatch[1].split(',').map(f => f.trim()).filter(Boolean) : [];
+                return (
+                    <div style={{ marginTop: 12 }}>
+                        {numericFields.length > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                                <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 700, marginBottom: 6, fontFamily: 'IBM Plex Mono' }}>📊 NUMERIC</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {numericFields.map(f => (
+                                        <button key={f} onClick={() => onQuickReply(f)}
+                                            style={{ ...btnBase, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', padding: '5px 12px', fontSize: 12 }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.18)'; e.currentTarget.style.borderColor = '#10b981'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.08)'; e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)'; }}
+                                        >{f}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {textFields.length > 0 && (
+                            <div style={{ marginBottom: dateFields.length > 0 ? 10 : 0 }}>
+                                <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 700, marginBottom: 6, fontFamily: 'IBM Plex Mono' }}>📝 TEXT</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {textFields.map(f => (
+                                        <button key={f} onClick={() => onQuickReply(f)}
+                                            style={{ ...btnBase, background: 'rgba(147, 197, 253, 0.08)', border: '1px solid rgba(147, 197, 253, 0.3)', color: '#93c5fd', padding: '5px 12px', fontSize: 12 }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(147, 197, 253, 0.18)'; e.currentTarget.style.borderColor = '#93c5fd'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(147, 197, 253, 0.08)'; e.currentTarget.style.borderColor = 'rgba(147, 197, 253, 0.3)'; }}
+                                        >{f}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {dateFields.length > 0 && (
+                            <div>
+                                <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 700, marginBottom: 6, fontFamily: 'IBM Plex Mono' }}>📅 DATE</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {dateFields.map(f => (
+                                        <button key={f} onClick={() => onQuickReply(f)}
+                                            style={{ ...btnBase, background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', color: '#fbbf24', padding: '5px 12px', fontSize: 12 }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(251, 191, 36, 0.18)'; e.currentTarget.style.borderColor = '#fbbf24'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(251, 191, 36, 0.08)'; e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.3)'; }}
+                                        >{f}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
+            {/* Operator selection buttons */}
+            {hasOperatorOptions && (() => {
+                const opMatch = content.match(/Available operators:\s*([^\n]+)/i);
+                const ops = opMatch
+                    ? opMatch[1].split(',').map(s => {
+                        const m = s.trim().match(/^(.+?)\s*\((\w+)\)$/);
+                        return m ? { label: m[1].trim(), value: m[2].trim() } : null;
+                    }).filter(Boolean)
+                    : [];
+                return ops.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        {ops.map(op => (
+                            <button key={op.value} onClick={() => onQuickReply(op.value)}
+                                style={{ ...btnBase, background: 'rgba(245, 158, 11, 0.08)', border: `1px solid ${colors.accent}44`, color: colors.accent, padding: '7px 16px', fontSize: 13 }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.18)'; e.currentTarget.style.borderColor = colors.accent; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)'; e.currentTarget.style.borderColor = `${colors.accent}44`; }}
+                            >
+                                <span style={{ fontSize: 15, fontWeight: 800 }}>{op.label}</span>
+                                <span style={{ fontSize: 10, opacity: 0.6, fontFamily: 'IBM Plex Mono' }}>{op.value}</span>
+                            </button>
+                        ))}
+                    </div>
+                ) : null;
+            })()}
+
+            {/* Rule type selection buttons */}
+            {hasRuleTypeOptions && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                    {[
+                        { value: '1', label: 'Threshold Rule', desc: 'compares a numeric field against a value' },
+                        { value: '2', label: 'Comparison Rule', desc: 'matches a field value exactly' },
+                        { value: '3', label: 'Cross-Field Rule', desc: 'validates relationships between fields' },
+                    ].map((opt, i) => (
+                        <button
+                            key={opt.value}
+                            onClick={() => onQuickReply(opt.value)}
+                            style={{
+                                ...btnBase,
+                                background: 'rgba(31, 41, 55, 0.8)',
+                                border: `1px solid ${colors.border}`,
+                                color: '#e5e7eb',
+                                padding: '10px 14px',
+                                textAlign: 'left',
+                                justifyContent: 'flex-start',
+                                gap: 10,
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.background = `rgba(245, 158, 11, 0.12)`;
+                                e.currentTarget.style.borderColor = colors.accent;
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(31, 41, 55, 0.8)';
+                                e.currentTarget.style.borderColor = colors.border;
+                            }}
+                        >
+                            <span style={{ fontSize: 16 }}>{['1️⃣','2️⃣','3️⃣'][i]}</span>
+                            <span>
+                                <span style={{ fontWeight: 700, color: '#f9fafb' }}>{opt.label}</span>
+                                <span style={{ color: '#6b7280', fontSize: 12 }}> — {opt.desc}</span>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Percentage slider (completeness / fraudScore) */}
+            {isPercentageValueStep && (() => {
+                const label = collectedFieldName === 'completeness' ? 'Document Completeness' : 'Fraud Score';
+                // Use a local ref-like approach via a wrapper component
+                return (
+                    <PercentageSlider label={label} onSubmit={onQuickReply} colors={colors} />
+                );
+            })()}
+
+            {/* Date value picker */}
+            {isDateValueStep && (
+                <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 11, color: '#6b7280', fontWeight: 700, marginBottom: 8, fontFamily: 'IBM Plex Mono' }}>
+                        📅 SELECT DATE (YYYY-MM-DD)
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <input
+                            type="date"
+                            style={{
+                                background: 'rgba(17, 24, 39, 0.8)',
+                                border: `1px solid rgba(251, 191, 36, 0.4)`,
+                                borderRadius: 8, padding: '8px 12px',
+                                color: '#fbbf24', fontSize: 13, fontFamily: 'IBM Plex Mono',
+                                outline: 'none', cursor: 'pointer',
+                                colorScheme: 'dark',
+                            }}
+                            onFocus={e => e.target.style.borderColor = '#fbbf24'}
+                            onBlur={e => e.target.style.borderColor = 'rgba(251, 191, 36, 0.4)'}
+                            onChange={e => {
+                                if (e.target.value) onQuickReply(e.target.value);
+                            }}
+                        />
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>Pick a date to submit automatically</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Deploy confirmation buttons */}
+            {hasDeployConfirm && (
+                <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => onQuickReply('deploy')}
+                        style={{ ...btnBase, background: 'rgba(245, 158, 11, 0.12)', border: `1.5px solid ${colors.accent}88`, color: colors.accent, padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.22)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.12)'}
+                    >🚀 Deploy Rule</button>
+                    <button
+                        onClick={() => onQuickReply('cancel')}
+                        style={{ ...btnBase, background: 'rgba(107, 114, 128, 0.1)', border: '1.5px solid rgba(107, 114, 128, 0.3)', color: '#9ca3af', padding: '8px 20px' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(107, 114, 128, 0.1)'}
+                    >✗ Cancel</button>
+                </div>
+            )}
+
+            {/* Intent action buttons */}
+            {hasIntentOptions && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                    {[
+                        { label: '➕ Add a rule', value: 'add' },
+                        { label: '🗑️ Delete a rule', value: 'delete' },
+                        { label: '✏️ Edit a rule', value: 'edit' },
+                    ].map(opt => (
+                        <button
+                            key={opt.value}
+                            onClick={() => onQuickReply(opt.value)}
+                            style={{
+                                ...btnBase,
+                                background: 'rgba(245, 158, 11, 0.08)',
+                                border: `1px solid ${colors.accent}55`,
+                                color: colors.accent,
+                                padding: '7px 16px',
+                                fontSize: 12,
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.background = `rgba(245, 158, 11, 0.18)`;
+                                e.currentTarget.style.borderColor = colors.accent;
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)';
+                                e.currentTarget.style.borderColor = `${colors.accent}55`;
+                            }}
+                        >{opt.label}</button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // Simple markdown-to-HTML renderer for chat messages
 function renderMarkdown(text) {
     return text
@@ -281,14 +795,14 @@ export default function RulesManagement({ colors, getToken }) {
     };
 
     // ─── Chatbot ───
-    const handleSendMessage = async (e) => {
+    const handleSendMessage = async (e, overrideValue) => {
         e.preventDefault();
-        if (!inputValue.trim() || chatLoading) return;
+        const msgValue = overrideValue !== undefined ? overrideValue : inputValue;
+        if (!msgValue.trim() || chatLoading) return;
 
-        const userMsg = { role: 'user', content: inputValue };
+        const userMsg = { role: 'user', content: msgValue };
         setMessages(prev => [...prev, userMsg]);
-        const currentInput = inputValue;
-        setInputValue('');
+        if (overrideValue === undefined) setInputValue('');
         setChatLoading(true);
 
         try {
@@ -300,7 +814,7 @@ export default function RulesManagement({ colors, getToken }) {
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    message: currentInput,
+                    message: msgValue,
                     context: {
                         step: chatStep,
                         collected: chatCollected,
@@ -317,7 +831,9 @@ export default function RulesManagement({ colors, getToken }) {
 
             if (data.status === "success") {
                 setMessages(prev => [...prev, { role: 'ai', content: data.response }]);
-                setChatStep(data.next_step || 'initial');
+
+                const nextStep = data.next_step || 'initial';
+                setChatStep(nextStep);
                 setChatCollected(data.collected || {});
                 setChatFieldIndex(data.current_field_index || 0);
                 setChatIntent(data.intent || null);
@@ -326,9 +842,9 @@ export default function RulesManagement({ colors, getToken }) {
                 setChatUpdatePayload(data.update_payload || null);
                 setChatUpdateRuleId(data.update_rule_id || null);
 
-                if (data.next_step === 'done') {
-                    // Rule deployed or deleted — refresh registry and reset state
-                    await fetchRules();
+                // Full reset on done or when returning to initial (e.g. after cancel)
+                if (nextStep === 'done' || nextStep === 'initial') {
+                    if (nextStep === 'done') await fetchRules();
                     setChatCollected({});
                     setChatFieldIndex(0);
                     setChatStep('initial');
@@ -344,6 +860,11 @@ export default function RulesManagement({ colors, getToken }) {
             setMessages(prev => [...prev, { role: 'ai', content: 'Sorry, something went wrong. Please try again.' }]);
         }
         setChatLoading(false);
+    };
+
+    // Quick reply handler — sends a value directly without needing the text input
+    const handleQuickReply = (value) => {
+        handleSendMessage({ preventDefault: () => {} }, value);
     };
 
     const inputStyle = {
@@ -853,10 +1374,15 @@ export default function RulesManagement({ colors, getToken }) {
                                         boxShadow: m.role === 'user' ? `0 4px 15px ${colors.accent}33` : 'none',
                                         border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
                                         whiteSpace: 'pre-wrap'
-                                    }}
-                                        dangerouslySetInnerHTML={m.role === 'ai' ? { __html: renderMarkdown(m.content) } : undefined}
-                                    >
-                                        {m.role === 'user' ? m.content : null}
+                                    }}>
+                                        {m.role === 'user' ? m.content : (
+                                            <InteractiveMessage
+                                                content={m.content}
+                                                onQuickReply={handleQuickReply}
+                                                colors={colors}
+                                                collectedFieldName={chatCollected?.field_name}
+                                            />
+                                        )}
                                     </div>
                                     <div style={{ fontSize: 10, color: colors.muted, marginTop: 4, fontFamily: 'IBM Plex Mono' }}>
                                         {m.role === 'user' ? 'YOU' : '🤖 AI ASSISTANT'}

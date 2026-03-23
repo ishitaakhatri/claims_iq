@@ -146,6 +146,19 @@ def add_greet_node(state: RuleAssistantState):
     """Entry point for the add flow — extract rule fields or ask for type."""
 
     message = state["message"]
+
+    # If the message is just an intent trigger word (e.g. "add", "create a rule"),
+    # skip LLM extraction entirely — it will hallucinate fields from the intent word.
+    INTENT_ONLY_WORDS = {"add", "create", "new", "make", "build", "create a rule", "add a rule", "new rule"}
+    if message.strip().lower() in INTENT_ONLY_WORDS or len(message.strip().split()) <= 2:
+        return {
+            "response": "What type of rule would you like?\n\n1️⃣ Threshold Rule — compares a numeric field against a value\n2️⃣ Comparison Rule — matches a field value exactly\n3️⃣ Cross-Field Rule — validates relationships between fields",
+            "next_step": "add_ask_type",
+            "collected": {},
+            "current_field_index": 0,
+            "intent": "add",
+        }
+
     extracted = extract_rule_from_text(message)
 
     if extracted:
@@ -208,7 +221,7 @@ def add_greet_node(state: RuleAssistantState):
                 lines.append(f"  • {fn}: ⚠️ Not detected")
 
         lines.append(f"\n📝 Available fields for {RULE_TYPES[rule_type]['label']}:")
-        lines.append(format_available_fields())
+        lines.append(format_available_fields(rule_type))
 
         missing = [f for f in fields_needed if f not in collected]
 
@@ -248,7 +261,7 @@ def add_greet_node(state: RuleAssistantState):
 
             if next_field == "field_name":
                 lines.append(f"\nAvailable fields:")
-                lines.append(format_available_fields())
+                lines.append(format_available_fields(rule_type))
             elif next_field == "operator":
                 lines.append(f"\nAvailable operators: {format_available_operators(rule_type)}")
 
@@ -267,7 +280,7 @@ def add_greet_node(state: RuleAssistantState):
         lines = [
             f"Great! We'll create a **{RULE_TYPES[suggested]['label']}**.\n",
             f"📝 Available fields for this rule type:",
-            format_available_fields(),
+            format_available_fields(suggested),
             f"\nStep 1: What should we name this rule?"
         ]
         return {
@@ -311,7 +324,7 @@ def add_ask_type_node(state: RuleAssistantState):
     lines = [
         f"Great choice! Creating a **{RULE_TYPES[selected]['label']}**.\n",
         f"📝 Available fields for this rule type:",
-        format_available_fields(),
+        format_available_fields(selected),
         f"\nStep 1: What should we name this rule?"
     ]
 
@@ -341,7 +354,7 @@ def add_ask_field_node(state: RuleAssistantState):
             if field == "name":
                 value = extract_rule_name(message)
             elif field == "field_name":
-                value = validate_field_name(message)
+                value = validate_field_name(message, rule_type)
             elif field == "operator":
                 value = validate_operator(message, rule_type)
             elif field == "weight":
@@ -356,7 +369,7 @@ def add_ask_field_node(state: RuleAssistantState):
         except Exception as e:
             error_msg = str(e)
             if field == "field_name":
-                error_msg += f"\n\nAvailable fields:\n{format_available_fields()}"
+                error_msg += f"\n\nAvailable fields:\n{format_available_fields(rule_type)}"
             elif field == "operator":
                 error_msg += f"\n\nAvailable operators: {format_available_operators(rule_type)}"
 
@@ -405,7 +418,7 @@ or **edit <field_name>** to change any value."""
     prompt_lines = [f"Step {idx + 1}: Please provide **{next_field}**"]
 
     if next_field == "field_name":
-        prompt_lines.append(f"\nAvailable fields:\n{format_available_fields()}")
+        prompt_lines.append(f"\nAvailable fields:\n{format_available_fields(rule_type)}")
     elif next_field == "operator":
         prompt_lines.append(f"\nAvailable operators: {format_available_operators(rule_type)}")
     elif next_field == "weight":
@@ -424,7 +437,18 @@ def add_confirm_deploy_node(state: RuleAssistantState):
     """Confirm deploy, allow edits, or cancel."""
 
     message = state["message"].lower().strip()
-    collected = state["collected"]
+    collected = state.get("collected") or {}
+
+    # Guard: if collected is empty or missing rule_type, the state is stale — reset
+    if not collected.get("rule_type"):
+        return {
+            "response": "What type of rule would you like?\n\n1️⃣ Threshold Rule — compares a numeric field against a value\n2️⃣ Comparison Rule — matches a field value exactly\n3️⃣ Cross-Field Rule — validates relationships between fields",
+            "next_step": "add_ask_type",
+            "collected": {},
+            "current_field_index": 0,
+            "intent": "add",
+            "context": {"step": "add_ask_type"},
+        }
 
     rule_type = collected["rule_type"]
     fields_needed = RULE_TYPES[rule_type]["fields_needed"]
@@ -497,7 +521,7 @@ or **edit <field_name>** to change any value."""
                 except Exception as e:
                     hint = ""
                     if field == "field_name":
-                        hint = f"\n\nAvailable fields:\n{format_available_fields()}"
+                        hint = f"\n\nAvailable fields:\n{format_available_fields(rule_type)}"
                     elif field == "operator":
                         hint = f"\n\nAvailable operators: {format_available_operators(rule_type)}"
                     
@@ -513,7 +537,7 @@ or **edit <field_name>** to change any value."""
             else:
                 hint = ""
                 if field == "field_name":
-                    hint = f"\n\nAvailable fields:\n{format_available_fields()}"
+                    hint = f"\n\nAvailable fields:\n{format_available_fields(rule_type)}"
                 elif field == "operator":
                     hint = f"\n\nAvailable operators: {format_available_operators(rule_type)}"
                 elif field == "weight":

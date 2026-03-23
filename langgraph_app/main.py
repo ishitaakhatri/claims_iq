@@ -220,6 +220,26 @@ async def ai_assist_rules(request: ChatMessage, user_info: dict = Depends(get_cu
     """
     try:
         ctx = request.context or {}
+
+        # ── Intercept bulk delete before hitting the graph ──
+        if request.message.startswith("__BULK_DELETE__:"):
+            rule_ids = [rid.strip() for rid in request.message[len("__BULK_DELETE__:"):].split(",") if rid.strip()]
+            deleted_names = []
+            for rule_id in rule_ids:
+                all_rules = rules_cache.get_rules()
+                rule_name = next((r.get("name", rule_id) for r in all_rules if r.get("id") == rule_id), rule_id)
+                rules_cache.remove(rule_id)
+                asyncio.create_task(rules_cache.bg_delete(rule_id))
+                deleted_names.append(f"**{rule_name}** (`{rule_id}`)")
+            summary = ", ".join(deleted_names)
+            return {
+                "status": "success",
+                "response": f"✅ Deleted {len(rule_ids)} rule{'s' if len(rule_ids) > 1 else ''}:\n{summary}\n\nWhat would you like to do next?\n\n➕ **Add** a new rule\n🗑️ **Delete** an existing rule\n✏️ **Edit** a rule",
+                "next_step": "done",
+                "collected": {}, "current_field_index": 0,
+                "intent": None, "delete_rule_id": None, "error_count": 0,
+                "update_payload": None, "update_rule_id": None,
+            }
         
         initial_state = {
             "message": request.message,

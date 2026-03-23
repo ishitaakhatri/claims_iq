@@ -139,9 +139,29 @@ def edit_extract_node(state: RuleAssistantState):
 # ─────────────────────────────────────────────────────────
 
 def edit_check_ref_node(state: RuleAssistantState):
-    """Check if update_payload has rule_id or rule_hint. Route accordingly."""
+    """Check if we have enough info to proceed to apply, retrieve, or ask."""
     payload = state.get("update_payload") or {}
+    state_rule_id = state.get("update_rule_id")
+    
+    # 1. We ALREADY know the EXACT rule from a previous turn!
+    if state_rule_id:
+        if payload.get("field") and payload.get("new_value") is not None:
+            # We know what rule, and we know exactly what to update!
+            return {
+                "context": {"step": "edit_apply"},
+                "intent": "edit",
+            }
+        else:
+            # We know the rule, but missing the update targets. Ask user!
+            error_count = state.get("error_count", 0) + 1
+            return {
+                "response": "Could you clarify the change? What would you like to update? (e.g. \"set value to 6000\" or \"change weight to 50\")",
+                "context": {"step": "edit_extract"},
+                "intent": "edit",
+                "error_count": error_count,
+            }
 
+    # 2. We don't know the exact rule, check if LLM extracted a name/ID hint
     rule_id = payload.get("rule_id")
     rule_hint = payload.get("rule_hint")
 
@@ -152,7 +172,7 @@ def edit_check_ref_node(state: RuleAssistantState):
             "intent": "edit",
         }
 
-    # No reference → ask user which rule
+    # 3. No reference at all → ask user which rule
     return {
         "context": {"step": "edit_ask_rule"},
         "intent": "edit",

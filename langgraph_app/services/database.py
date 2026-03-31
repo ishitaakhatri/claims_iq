@@ -507,6 +507,78 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
             conn.close()
 
 
+def get_review_queue_claims(user_id: str, is_admin: bool = False) -> list:
+    """
+    Returns claims that need human review: review_required, under_review, escalated.
+    Includes review_status so the UI can show current state.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        pending_statuses = ('review_required', 'under_review', 'escalated', 'pending_documentation')
+
+        if is_admin:
+            cursor.execute("""
+                SELECT c.id, c.extracted_data, c.evaluation_results, c.created_at,
+                       c.blob_uri, c.form_category, c.status, c.review_status, u.email
+                FROM claims_history c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.review_status = ANY(%s)
+                ORDER BY c.created_at DESC
+                LIMIT 100
+            """, (list(pending_statuses),))
+        else:
+            cursor.execute("""
+                SELECT id, extracted_data, evaluation_results, created_at,
+                       blob_uri, form_category, status, review_status, %s as email
+                FROM claims_history
+                WHERE user_id = %s AND review_status = ANY(%s)
+                ORDER BY created_at DESC
+                LIMIT 50
+            """, ('', user_id, list(pending_statuses)))
+
+        rows = cursor.fetchall()
+        cursor.close()
+
+        queue = []
+        for row in rows:
+            extracted = row[2] if isinstance(row[2], dict) else json.loads(row[2]) if row[2] else {}
+            # Note: index shift — extracted_data is col 1, evaluation_results is col 2
+            extracted = row[1] if isinstance(row[1], dict) else json.loads(row[1]) if row[1] else {}
+            evaluation = row[2] if isinstance(row[2], dict) else json.loads(row[2]) if row[2] else {}
+            queue.append({
+                "id": str(row[0]),
+                "claim": extracted.get("claimNumber", "N/A"),
+                "claimant": extracted.get("claimantName", "Unknown"),
+                "amount": extracted.get("claimAmount"),
+                "claimType": extracted.get("claimType", ""),
+                "routing": evaluation.get("routing", row[6]),
+                "review_status": row[7] or "review_required",
+                "time": row[3].isoformat() if row[3] else "N/A",
+                "confidence": evaluation.get("confidence", 0),
+                "riskTier": evaluation.get("riskTier", "medium"),
+                "escalateTo": evaluation.get("escalateTo", ""),
+                "reviewTriggers": evaluation.get("reviewTriggers", []),
+                "escalationReasons": evaluation.get("escalationReasons", []),
+                "extracted": extracted,
+                "evaluation": evaluation,
+                "blob_uri": row[4],
+                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf",
+                "submitterEmail": row[8] if row[8] else "",
+            })
+
+        print(f"[Database] Review queue: {len(queue)} claims pending for user: {user_id}")
+        return queue
+    except Exception as e:
+        print(f"[Database] Error fetching review queue: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
 def backfill_orphaned_claims(user_id: str) -> int:
     """
     Assigns the given user_id to all claims_history rows where user_id IS NULL.

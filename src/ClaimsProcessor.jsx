@@ -4,6 +4,7 @@ import RulesManagement from "./RulesManagement.jsx";
 import GovernancePanel from "./GovernancePanel.jsx";
 import HumanReviewConsole from "./HumanReviewConsole.jsx";
 import AuditTrail from "./AuditTrail.jsx";
+import ReviewQueue from "./ReviewQueue.jsx";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import logoImg from "./logo.png";
@@ -210,6 +211,7 @@ export default function ClaimsProcessor() {
   const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error" | null
   const [reviewCompleted, setReviewCompleted] = useState(null); // null | "approve" | "escalate" | "override"
   const [savedClaimId, setSavedClaimId] = useState(null);
+  const [manualReviewOpen, setManualReviewOpen] = useState(false); // optional review for STP claims
 
   const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
@@ -361,6 +363,8 @@ export default function ClaimsProcessor() {
       setExtracted(extracted_data);
       setEvaluation(evaluation);
       setStage("done");
+      setManualReviewOpen(false);
+      setReviewCompleted(null);
       // Default to Action Center if review needed, otherwise Explainability/DNA
       setActiveTab(evaluation.humanReviewRequired ? "action" : "dna");
 
@@ -820,6 +824,16 @@ export default function ClaimsProcessor() {
                     fontSize: 11, fontWeight: 800, cursor: "pointer", transition: "all 0.3s ease"
                   }}
                 >GOVERNANCE</button>
+                <button
+                  onClick={() => setView('review')}
+                  style={{
+                    padding: "6px 16px", borderRadius: "8px", border: "none",
+                    background: view === 'review' ? "#f59e0b" : "transparent",
+                    color: view === 'review' ? colors.bg : "#f59e0b",
+                    fontSize: 11, fontWeight: 800, cursor: "pointer", transition: "all 0.3s ease",
+                    outline: view !== 'review' ? "1px solid rgba(245,158,11,0.35)" : "none",
+                  }}
+                >REVIEW QUEUE</button>
               </div>
 
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
@@ -835,6 +849,8 @@ export default function ClaimsProcessor() {
                 <RulesManagement colors={colors} getToken={getToken} />
               ) : view === "governance" ? (
                 <GovernancePanel colors={colors} getToken={getToken} />
+              ) : view === "review" ? (
+                <ReviewQueue colors={colors} getToken={getToken} />
               ) : (
                 <>
                   {/* Upload Zone */}
@@ -1155,6 +1171,85 @@ export default function ClaimsProcessor() {
                           </div>
                         </div>
                       )}
+
+                      {/* Quick Actions — View Document + Optional Review */}
+                      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+                        {/* View Original Document */}
+                        {claimsLog[0]?.blob_uri ? (
+                          <a
+                            href={claimsLog[0].blob_uri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 7,
+                              padding: "9px 18px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                              fontFamily: "'Barlow', sans-serif", cursor: "pointer", textDecoration: "none",
+                              background: "rgba(147, 197, 253, 0.08)",
+                              border: "1px solid rgba(147, 197, 253, 0.3)",
+                              color: "#93c5fd", transition: "all 0.2s",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(147, 197, 253, 0.16)"; e.currentTarget.style.borderColor = "#93c5fd"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(147, 197, 253, 0.08)"; e.currentTarget.style.borderColor = "rgba(147, 197, 253, 0.3)"; }}
+                          >
+                            📄 View Original Document
+                          </a>
+                        ) : (
+                          <div style={{
+                            display: "inline-flex", alignItems: "center", gap: 7,
+                            padding: "9px 18px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                            fontFamily: "'Barlow', sans-serif",
+                            background: "rgba(75, 85, 99, 0.08)",
+                            border: "1px solid rgba(75, 85, 99, 0.2)",
+                            color: "#4b5563",
+                          }}>
+                            📄 Document uploading...
+                          </div>
+                        )}
+                        {/* Optional Manual Review — always available, even for STP */}
+                        {!reviewCompleted && (
+                          <button
+                            onClick={async () => {
+                              const opening = !manualReviewOpen;
+                              setManualReviewOpen(opening);
+                              // When opening for an STP claim, flag it in the DB so it appears in the review queue
+                              if (opening && savedClaimId) {
+                                try {
+                                  const apiUrl = import.meta.env.PROD ? "" : "http://localhost:8000";
+                                  const token = await getToken();
+                                  await fetch(`${apiUrl}/claims/${savedClaimId}/review-status?status=review_required`, {
+                                    method: "PATCH",
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  });
+                                } catch (e) {
+                                  console.error("[ReviewQueue] Failed to update review status", e);
+                                }
+                              }
+                            }}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 7,
+                              padding: "9px 18px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                              fontFamily: "'Barlow', sans-serif", cursor: "pointer", border: "none",
+                              background: manualReviewOpen
+                                ? "rgba(245, 158, 11, 0.18)"
+                                : "rgba(245, 158, 11, 0.08)",
+                              border: `1px solid ${manualReviewOpen ? "rgba(245, 158, 11, 0.6)" : "rgba(245, 158, 11, 0.25)"}`,
+                              color: "#f59e0b", transition: "all 0.2s",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(245, 158, 11, 0.18)"; e.currentTarget.style.borderColor = "rgba(245, 158, 11, 0.6)"; }}
+                            onMouseLeave={e => {
+                              if (!manualReviewOpen) {
+                                e.currentTarget.style.background = "rgba(245, 158, 11, 0.08)";
+                                e.currentTarget.style.borderColor = "rgba(245, 158, 11, 0.25)";
+                              }
+                            }}
+                          >
+                            👁 {manualReviewOpen ? "Close Review" : "Send to Review"}
+                            {evaluation.routing === "STP" && (
+                              <span style={{ fontSize: 10, opacity: 0.6, fontFamily: "IBM Plex Mono" }}>optional</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
 
                       {/* Tabs */}
                       <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24, overflowX: "auto" }}>
@@ -1716,8 +1811,8 @@ export default function ClaimsProcessor() {
                               }
                             </div>
                           </div>
-{/* Human Review Console */}
-                      {evaluation?.humanReviewRequired && !reviewCompleted && (
+{/* Human Review Console — required for escalations, optional for STP */}
+                      {(evaluation?.humanReviewRequired || manualReviewOpen) && !reviewCompleted && (
                         <div style={{ marginTop: 24 }}>
                           <HumanReviewConsole
                             claim={{ id: savedClaimId }}

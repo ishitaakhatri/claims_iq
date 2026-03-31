@@ -18,6 +18,7 @@ from .services.database import (
     delete_claim, get_db_connection,
     ensure_review_tables, save_review, save_audit_entry,
     get_audit_trail, get_governance_metrics, update_claim_review_status,
+    get_review_queue_claims,
 )
 from .services.rules_cache import rules_cache
 from .auth import get_current_user
@@ -659,6 +660,18 @@ async def get_claim_audit_trail(claim_id: str, user_info: dict = Depends(get_cur
         return {"status": "success", "claim_id": claim_id, "audit_trail": trail}
     except Exception as e:
         print(f"[API] Audit Trail Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/review-queue")
+async def get_review_queue(user_info: dict = Depends(get_current_user)):
+    """Returns all claims pending human review (review_required, under_review, escalated)."""
+    try:
+        is_admin = (user_info.get("role") == "admin")
+        queue = get_review_queue_claims(user_info.get("id"), is_admin)
+        return {"status": "success", "queue": queue}
+    except Exception as e:
+        print(f"[API] Review Queue Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

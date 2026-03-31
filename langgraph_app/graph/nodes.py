@@ -318,22 +318,26 @@ async def evaluation_node(state: ClaimsState):
         )
 
     # ── Risk Tier & Processing Mode ──────────────────────────────────────────
+    # Trigger groups inform risk tier and can escalate, but NEVER override a
+    # clean STP routing to "review_required". Group D (high-value, sensitive)
+    # raises the risk tier for visibility but doesn't block auto-processing
+    # unless rules actually failed or extraction was uncertain.
     has_group_cd = bool(trigger_groups["C_decision_uncertainty"] or trigger_groups["D_sensitive_claims"])
     has_group_ab = bool(trigger_groups["A_extraction_uncertainty"] or trigger_groups["B_business_exceptions"])
-    
-    # Use AI's assessment first, then override based on rule results
-    ai_risk_tier = extracted_data.get("riskTier", "")
-    ai_processing_mode = extracted_data.get("processingMode", "")
-    
-    if has_group_cd or fraud_score > 60:
-        risk_tier = "high"
-        processing_mode = "escalated"
-    elif has_group_ab or not stp:
-        risk_tier = "medium"
-        processing_mode = "review_required"
-    elif ai_risk_tier in ("medium", "high"):
-        risk_tier = ai_risk_tier
-        processing_mode = ai_processing_mode if ai_processing_mode else "review_required"
+
+    if not stp or has_group_ab:
+        # Rules failed or extraction issues — always requires review
+        if fraud_score > 60 or has_group_cd:
+            risk_tier = "high"
+            processing_mode = "escalated"
+        else:
+            risk_tier = "medium"
+            processing_mode = "review_required"
+    elif has_group_cd:
+        # All rules passed but high-value / sensitive / uncertain confidence —
+        # elevate risk tier for visibility, but keep as auto_eligible (STP)
+        risk_tier = "high" if fraud_score > 60 else "medium"
+        processing_mode = "auto_eligible"
     else:
         risk_tier = "low"
         processing_mode = "auto_eligible"

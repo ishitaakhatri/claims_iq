@@ -361,7 +361,8 @@ export default function ClaimsProcessor() {
       setExtracted(extracted_data);
       setEvaluation(evaluation);
       setStage("done");
-      setActiveTab("extraction");
+      // Default to Action Center if review needed, otherwise Explainability/DNA
+      setActiveTab(evaluation.humanReviewRequired ? "action" : "dna");
 
       setClaimsLog(prev => [{
         id: Date.now(),
@@ -1156,22 +1157,24 @@ export default function ClaimsProcessor() {
                       )}
 
                       {/* Tabs */}
-                      <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24 }}>
+                      <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24, overflowX: "auto" }}>
                         {[
-                          { id: "extraction", label: "Extracted Data" },
-                          { id: "intelligence", label: "Decision Intelligence" },
-                          { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length}/${evaluation.results.filter(r => r.status !== "SKIPPED").length})` },
-                          { id: "notes", label: "AI Notes" },
-                        ].map(t => (
+                          { id: "action", label: "Action Center", show: evaluation.humanReviewRequired },
+                          { id: "dna", label: "Decision DNA", show: true },
+                          { id: "extraction", label: "Extracted Context", show: true },
+                          { id: "rules", label: `Rules Execution (${evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length}/${evaluation.results.filter(r => r.status !== "SKIPPED").length})`, show: true },
+                          { id: "audit", label: "Audit Trail", show: !!savedClaimId },
+                        ].filter(t => t.show).map(t => (
                           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
-                            padding: "12px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600,
+                            padding: "12px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: t.id === "action" ? 800 : 600,
                             fontFamily: "'Barlow', sans-serif",
-                            background: "transparent",
-                            color: activeTab === t.id ? colors.accent : colors.muted,
-                            borderBottom: activeTab === t.id ? `3px solid ${colors.accent}` : "3px solid transparent",
+                            background: activeTab === t.id && t.id === "action" ? "rgba(245, 158, 11, 0.1)" : "transparent",
+                            color: activeTab === t.id ? (t.id === "action" ? "#f59e0b" : colors.text) : colors.muted,
+                            borderBottom: activeTab === t.id ? `3px solid ${t.id === "action" ? "#f59e0b" : colors.text}` : "3px solid transparent",
                             transition: "all 0.2s ease",
                             position: "relative",
-                            opacity: activeTab === t.id ? 1 : 0.7
+                            opacity: activeTab === t.id ? 1 : 0.7,
+                            whiteSpace: "nowrap"
                           }}>
                             {t.label}
                             {activeTab === t.id && (
@@ -1181,7 +1184,7 @@ export default function ClaimsProcessor() {
                                 left: "0",
                                 right: "0",
                                 height: "3px",
-                                background: colors.accent,
+                                background: t.id === "action" ? "#f59e0b" : colors.text,
                                 animation: "slideIn 0.2s ease"
                               }} />
                             )}
@@ -1360,11 +1363,60 @@ export default function ClaimsProcessor() {
                               ))}
                             </>
                           )}
-                        </div>
+                        
+<div style={{
+                            padding: "18px",
+                            background: "rgba(17, 24, 39, 0.8)",
+                            backdropFilter: "blur(8px)",
+                            borderRadius: 12,
+                            border: `1px solid ${colors.border}`,
+                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                            transition: "all 0.3s ease"
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = colors.accent;
+                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = colors.border;
+                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}>
+                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>💡 EXTRACTION NOTES</div>
+                            <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
+                          </div>
+
+                          
+<div style={{
+                            padding: "18px",
+                            background: "rgba(17, 24, 39, 0.8)",
+                            backdropFilter: "blur(8px)",
+                            borderRadius: 12,
+                            border: `1px solid ${colors.border}`,
+                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                            transition: "all 0.3s ease"
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = colors.accent;
+                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = colors.border;
+                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}>
+                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>📄 SUPPORTING DOCUMENTS</div>
+                            <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
+                          </div>
+
+                          
+</div>
                       )}
 
-                      {/* Decision Intelligence Tab */}
-                      {activeTab === "intelligence" && (
+                      {/* Decision DNA Tab */}
+                      {activeTab === "dna" && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 20, animation: "fadeIn 0.3s ease" }}>
 
                           {/* Why This Recommendation? */}
@@ -1509,7 +1561,65 @@ export default function ClaimsProcessor() {
                               </div>
                             </div>
                           )}
-                        </div>
+                        
+<div style={{
+                            padding: "18px",
+                            background: "rgba(17, 24, 39, 0.8)",
+                            backdropFilter: "blur(8px)",
+                            borderRadius: 12,
+                            border: `1px solid ${colors.border}`,
+                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
+                            transition: "all 0.3s ease"
+                          }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = colors.accent;
+                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = colors.border;
+                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }}>
+                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>🛡️ FRAUD RISK ASSESSMENT</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                              <div style={{ flex: 1, height: 10, background: colors.dim, borderRadius: 6, overflow: "hidden" }}>
+                                <div style={{
+                                  height: "100%", width: `${extracted.fraudScore || 0}%`,
+                                  background: (extracted.fraudScore || 0) > 60 ? "linear-gradient(90deg, #ef4444, #f87171)" : (extracted.fraudScore || 0) > 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #10b981, #4ade80)",
+                                  borderRadius: 6, transition: "width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)"
+                                }} />
+                              </div>
+                              <span style={{ fontFamily: "IBM Plex Mono", fontSize: 15, fontWeight: 700, minWidth: 50 }}>{extracted.fraudScore ?? 0}/100</span>
+                            </div>
+                            <div style={{ fontSize: 13, color: colors.muted, lineHeight: 1.6, marginBottom: 14 }}>
+                              {(extracted.fraudScore || 0) <= 30 ? "✓ Low risk — proceed normally" :
+                                (extracted.fraudScore || 0) <= 60 ? "⚠ Moderate risk — manual review recommended" :
+                                  "🔴 High risk — escalate to fraud investigation unit"}
+                            </div>
+                            {extracted.fraudReasons && extracted.fraudReasons.length > 0 && (
+                              <div style={{
+                                padding: "12px",
+                                background: "rgba(245, 158, 11, 0.08)",
+                                border: `1px solid rgba(245, 158, 11, 0.3)`,
+                                borderRadius: 8,
+                                fontSize: 12,
+                                color: "#fcd34d",
+                                lineHeight: 1.7
+                              }}>
+                                <div style={{ fontSize: 10, color: colors.accent, fontWeight: 700, marginBottom: 8, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em" }}>⚠️ CONTRIBUTING FACTORS:</div>
+                                {extracted.fraudReasons.map((reason, idx) => (
+                                  <div key={idx} style={{ marginBottom: idx < extracted.fraudReasons.length - 1 ? 6 : 0, display: "flex", gap: 8 }}>
+                                    <span style={{ minWidth: 20, color: colors.accent, fontWeight: 700 }}>•</span>
+                                    <span>{reason}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          
+</div>
                       )}
 
                       {/* Rules Tab */}
@@ -1576,112 +1686,10 @@ export default function ClaimsProcessor() {
                         </div>
                       )}
 
-                      {/* Notes Tab */}
-                      {activeTab === "notes" && (
+                                                                  {/* Action Center Tab */}
+                      {activeTab === "action" && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeIn 0.3s ease" }}>
-                          <div style={{
-                            padding: "18px",
-                            background: "rgba(17, 24, 39, 0.8)",
-                            backdropFilter: "blur(8px)",
-                            borderRadius: 12,
-                            border: `1px solid ${colors.border}`,
-                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
-                            transition: "all 0.3s ease"
-                          }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = colors.accent;
-                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                              e.currentTarget.style.transform = "translateY(-2px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = colors.border;
-                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                              e.currentTarget.style.transform = "translateY(0)";
-                            }}>
-                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>💡 EXTRACTION NOTES</div>
-                            <div style={{ fontSize: 14, color: "#d1d5db", lineHeight: 1.7 }}>{extracted.extractionNotes || "No notable observations."}</div>
-                          </div>
-
-                          <div style={{
-                            padding: "18px",
-                            background: "rgba(17, 24, 39, 0.8)",
-                            backdropFilter: "blur(8px)",
-                            borderRadius: 12,
-                            border: `1px solid ${colors.border}`,
-                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
-                            transition: "all 0.3s ease"
-                          }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = colors.accent;
-                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                              e.currentTarget.style.transform = "translateY(-2px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = colors.border;
-                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                              e.currentTarget.style.transform = "translateY(0)";
-                            }}>
-                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>🛡️ FRAUD RISK ASSESSMENT</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                              <div style={{ flex: 1, height: 10, background: colors.dim, borderRadius: 6, overflow: "hidden" }}>
-                                <div style={{
-                                  height: "100%", width: `${extracted.fraudScore || 0}%`,
-                                  background: (extracted.fraudScore || 0) > 60 ? "linear-gradient(90deg, #ef4444, #f87171)" : (extracted.fraudScore || 0) > 30 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #10b981, #4ade80)",
-                                  borderRadius: 6, transition: "width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)"
-                                }} />
-                              </div>
-                              <span style={{ fontFamily: "IBM Plex Mono", fontSize: 15, fontWeight: 700, minWidth: 50 }}>{extracted.fraudScore ?? 0}/100</span>
-                            </div>
-                            <div style={{ fontSize: 13, color: colors.muted, lineHeight: 1.6, marginBottom: 14 }}>
-                              {(extracted.fraudScore || 0) <= 30 ? "✓ Low risk — proceed normally" :
-                                (extracted.fraudScore || 0) <= 60 ? "⚠ Moderate risk — manual review recommended" :
-                                  "🔴 High risk — escalate to fraud investigation unit"}
-                            </div>
-                            {extracted.fraudReasons && extracted.fraudReasons.length > 0 && (
-                              <div style={{
-                                padding: "12px",
-                                background: "rgba(245, 158, 11, 0.08)",
-                                border: `1px solid rgba(245, 158, 11, 0.3)`,
-                                borderRadius: 8,
-                                fontSize: 12,
-                                color: "#fcd34d",
-                                lineHeight: 1.7
-                              }}>
-                                <div style={{ fontSize: 10, color: colors.accent, fontWeight: 700, marginBottom: 8, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em" }}>⚠️ CONTRIBUTING FACTORS:</div>
-                                {extracted.fraudReasons.map((reason, idx) => (
-                                  <div key={idx} style={{ marginBottom: idx < extracted.fraudReasons.length - 1 ? 6 : 0, display: "flex", gap: 8 }}>
-                                    <span style={{ minWidth: 20, color: colors.accent, fontWeight: 700 }}>•</span>
-                                    <span>{reason}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{
-                            padding: "18px",
-                            background: "rgba(17, 24, 39, 0.8)",
-                            backdropFilter: "blur(8px)",
-                            borderRadius: 12,
-                            border: `1px solid ${colors.border}`,
-                            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
-                            transition: "all 0.3s ease"
-                          }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = colors.accent;
-                              e.currentTarget.style.boxShadow = `0 8px 24px rgba(245, 158, 11, 0.15)`;
-                              e.currentTarget.style.transform = "translateY(-2px)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = colors.border;
-                              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
-                              e.currentTarget.style.transform = "translateY(0)";
-                            }}>
-                            <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 10, fontWeight: 700 }}>📄 SUPPORTING DOCUMENTS</div>
-                            <div style={{ fontSize: 14 }}>{fmt(extracted.supportingDocuments)}</div>
-                          </div>
-
-                          <div style={{
+<div style={{
                             padding: "18px",
                             background: "rgba(28, 17, 7, 0.9)",
                             backdropFilter: "blur(8px)",
@@ -1708,10 +1716,7 @@ export default function ClaimsProcessor() {
                               }
                             </div>
                           </div>
-                        </div>
-                      )}
-
-                      {/* Human Review Console */}
+{/* Human Review Console */}
                       {evaluation?.humanReviewRequired && !reviewCompleted && (
                         <div style={{ marginTop: 24 }}>
                           <HumanReviewConsole
@@ -1744,10 +1749,21 @@ export default function ClaimsProcessor() {
                         </div>
                       )}
 
-                      {/* Audit Trail */}
+                      
+                        </div>
+                      )}
+
+                      {/* Audit Trail Tab */}
+                      {activeTab === "audit" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fadeIn 0.3s ease" }}>
+{/* Audit Trail */}
                       {savedClaimId && (
                         <div style={{ marginTop: 24 }}>
                           <AuditTrail claimId={savedClaimId} colors={colors} getToken={getToken} />
+                        </div>
+                      )}
+
+
                         </div>
                       )}
 

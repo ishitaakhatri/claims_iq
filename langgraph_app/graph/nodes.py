@@ -394,6 +394,55 @@ async def evaluation_node(state: ClaimsState):
         "human_review_required": human_review_required,
     }
 
+    # ── Decision DNA: Dynamic "What was used" vs "What was ignored" ───────────
+    # This is the key transparency feature: show the ACTUAL data that was
+    # present in this specific document, split into what drove the decision
+    # vs what was deliberately ignored.
+    
+    # Fields the AI extracted but that are NOT in the whitelist
+    _meta_keys = {"fieldConfidence", "additionalFields", "reviewTriggers", "riskTier", "processingMode", "missingFields"}
+    
+    # "Used" = whitelisted fields that had actual values
+    used_for_decision = {}
+    for key in DECISION_FEATURE_WHITELIST:
+        val = extracted_data.get(key)
+        if val is not None and val != "" and key not in _meta_keys:
+            used_for_decision[key] = val
+    
+    # "Ignored" = non-whitelisted fields that had actual values (the money shot)
+    present_but_ignored = {}
+    _label_map = {
+        "claimantName": "Claimant Name",
+        "claimantAddress": "Claimant Address / Region", 
+        "claimantId": None,  # This IS in whitelist
+        "contactNumber": "Contact Number",
+        "providerName": None,  # This IS in whitelist  
+        "incidentDescription": "Incident Description Style",
+    }
+    
+    for key, val in extracted_data.items():
+        if key in DECISION_FEATURE_WHITELIST:
+            continue  # Already used — skip
+        if key in _meta_keys or key in ("additionalFields", "fieldConfidence"):
+            continue  # Metadata — skip
+        if val is None or val == "":
+            continue  # Empty — nothing to show
+        
+        # Use friendly label if available, otherwise auto-generate
+        label = _label_map.get(key, key.replace("_", " ").title() if "_" in key else 
+                               "".join(" " + c if c.isupper() else c for c in key).strip().title())
+        present_but_ignored[label] = val
+    
+    # Always include these conceptual exclusions even if not explicitly extracted
+    _always_excluded = {
+        "Language of Submission": "auto-detected",
+        "Document Formatting Style": "observed but ignored",
+        "Handwriting Style": "observed but ignored",
+    }
+    for label, placeholder in _always_excluded.items():
+        if label not in present_but_ignored:
+            present_but_ignored[label] = placeholder
+
     # ── Build final evaluation object ────────────────────────────────────────
     evaluation = {
         "results": results,
@@ -408,7 +457,11 @@ async def evaluation_node(state: ClaimsState):
         "processingMode": processing_mode,
         "reviewTriggers": all_review_triggers,
         "humanReviewRequired": human_review_required,
-        "excludedFromDecisioning": EXCLUDED_FROM_DECISIONING,
+        # Dynamic Decision DNA
+        "decisionDNA": {
+            "used": used_for_decision,
+            "ignored": present_but_ignored,
+        },
     }
     
     return {

@@ -1393,69 +1393,78 @@ export default function ClaimsProcessor() {
                           )}
 
                           {/* Decision DNA Panel — The "Money Shot" */}
-                          <div style={{
-                            padding: "20px 24px", borderRadius: 14,
-                            background: "linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(28, 17, 7, 0.5))",
-                            border: `2px solid rgba(245, 158, 11, 0.3)`,
-                            boxShadow: "0 8px 32px rgba(245, 158, 11, 0.1)",
-                          }}>
-                            <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 6, fontWeight: 700 }}>🧬 DECISION DNA</div>
-                            <div style={{ fontSize: 11, color: colors.muted, marginBottom: 18, lineHeight: 1.5 }}>
-                              The AI processed this claim without knowing the claimant's name, their location, or how they wrote their documents. The decision is based entirely on what the policy says and what the evidence shows.
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                              {/* Left: What influenced */}
+                          {(() => {
+                            const dna = evaluation.decisionDNA || {};
+                            const usedFields = dna.used || {};
+                            const ignoredFields = dna.ignored || {};
+                            const fmt = (v) => {
+                              if (v === true) return "Yes";
+                              if (v === false) return "No";
+                              if (typeof v === "number") return v.toLocaleString();
+                              if (Array.isArray(v)) return v.join(", ");
+                              if (typeof v === "string" && v.length > 60) return v.slice(0, 57) + "...";
+                              return String(v ?? "—");
+                            };
+                            const labelify = (key) => key
+                              .replace(/([A-Z])/g, " $1")
+                              .replace(/([0-9]+)/g, " $1")
+                              .trim()
+                              .replace(/^\w/, c => c.toUpperCase());
+
+                            return (
                               <div style={{
-                                padding: "14px 16px", borderRadius: 10,
-                                background: "rgba(16, 185, 129, 0.06)",
-                                border: "1px solid rgba(16, 185, 129, 0.2)",
+                                padding: "20px 24px", borderRadius: 14,
+                                background: "linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(28, 17, 7, 0.5))",
+                                border: `2px solid rgba(245, 158, 11, 0.3)`,
+                                boxShadow: "0 8px 32px rgba(245, 158, 11, 0.1)",
                               }}>
-                                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#10b981", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>✅ WHAT INFLUENCED THIS DECISION</div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  {(evaluation.decisionReasoning?.rules_fired || [])
-                                    .map((rf, i) => (
-                                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#d1d5db" }}>
-                                        <span style={{ color: rf.status === "passed" ? "#10b981" : "#f59e0b", fontSize: 14, minWidth: 16 }}>{rf.status === "passed" ? "✓" : "⚠"}</span>
-                                        <span>{rf.name}</span>
-                                      </div>
-                                    ))}
-                                  {[
-                                    { label: "Policy validity status", show: true },
-                                    { label: `Claim amount ($${(extracted.claimAmount || 0).toLocaleString()})`, show: !!extracted.claimAmount },
-                                    { label: "Filing date vs incident date", show: !!(extracted.filingDate && extracted.incidentDate) },
-                                    { label: "Document completeness check", show: true },
-                                    { label: "Fraud risk indicators", show: true },
-                                    { label: "Duplicate claim check", show: true },
-                                  ].filter(x => x.show).map((item, i) => (
-                                    <div key={`static-${i}`} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#9ca3af" }}>
-                                      <span style={{ color: "#10b981", fontSize: 14, minWidth: 16 }}>•</span>
-                                      <span>{item.label}</span>
+                                <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 6, fontWeight: 700 }}>🧬 DECISION DNA</div>
+                                <div style={{ fontSize: 11, color: colors.muted, marginBottom: 18, lineHeight: 1.5 }}>
+                                  The AI processed this claim without knowing the claimant's name, their location, or how they wrote their documents. The decision is based entirely on what the policy says and what the evidence shows.
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                  {/* Left: What influenced — DYNAMIC */}
+                                  <div style={{
+                                    padding: "14px 16px", borderRadius: 10,
+                                    background: "rgba(16, 185, 129, 0.06)",
+                                    border: "1px solid rgba(16, 185, 129, 0.2)",
+                                  }}>
+                                    <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#10b981", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>✅ WHAT INFLUENCED THIS DECISION</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                      {Object.entries(usedFields).map(([key, val], i) => (
+                                        <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#d1d5db" }}>
+                                          <span style={{ color: "#10b981", fontSize: 14, minWidth: 16, marginTop: 1 }}>✓</span>
+                                          <div>
+                                            <span style={{ color: "#9ca3af", fontSize: 10, fontFamily: "IBM Plex Mono" }}>{labelify(key)}</span>
+                                            <div style={{ fontWeight: 600, color: "#e5e7eb" }}>{fmt(val)}</div>
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
+                                  </div>
+                                  {/* Right: What was ignored — DYNAMIC */}
+                                  <div style={{
+                                    padding: "14px 16px", borderRadius: 10,
+                                    background: "rgba(239, 68, 68, 0.04)",
+                                    border: "1px solid rgba(239, 68, 68, 0.15)",
+                                  }}>
+                                    <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#ef4444", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>🚫 PRESENT BUT NOT USED</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                      {Object.entries(ignoredFields).map(([label, val], i) => (
+                                        <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#9ca3af" }}>
+                                          <span style={{ color: "#ef4444", fontSize: 12, minWidth: 16, opacity: 0.7, marginTop: 2 }}>✗</span>
+                                          <div>
+                                            <span style={{ color: "#6b7280", fontSize: 10, fontFamily: "IBM Plex Mono" }}>{label}</span>
+                                            <div style={{ fontWeight: 600, color: "#9ca3af" }}>{fmt(val)}</div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                              {/* Right: What was ignored */}
-                              <div style={{
-                                padding: "14px 16px", borderRadius: 10,
-                                background: "rgba(239, 68, 68, 0.04)",
-                                border: "1px solid rgba(239, 68, 68, 0.15)",
-                              }}>
-                                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#ef4444", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>🚫 PRESENT BUT NOT USED</div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                  {(evaluation.excludedFromDecisioning || [
-                                    "Claimant name", "Claimant address / region", "Language of submission",
-                                    "Handwriting style", "Document formatting style", "Provider location",
-                                    "Claimant demographics"
-                                  ]).map((item, i) => (
-                                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#9ca3af" }}>
-                                      <span style={{ color: "#ef4444", fontSize: 12, minWidth: 16, opacity: 0.7 }}>✗</span>
-                                      <span>{item}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                            );
+                          })()}
 
                           {/* Trigger Groups */}
                           {evaluation.triggerGroups && Object.values(evaluation.triggerGroups).some(g => g?.length > 0) && (

@@ -1,6 +1,9 @@
 import { SignedIn, SignedOut, SignIn, SignUp, UserButton, useAuth } from "@clerk/clerk-react"
 import AuthPage from "./AuthPage.jsx";
 import RulesManagement from "./RulesManagement.jsx";
+import GovernancePanel from "./GovernancePanel.jsx";
+import HumanReviewConsole from "./HumanReviewConsole.jsx";
+import AuditTrail from "./AuditTrail.jsx";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import logoImg from "./logo.png";
@@ -186,7 +189,7 @@ function RuleRow({ rule }) {
 
 export default function ClaimsProcessor() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const [view, setView] = useState('dashboard'); // dashboard | rules
+  const [view, setView] = useState('dashboard'); // dashboard | rules | governance
   const [stage, setStage] = useState("idle"); // idle | processing | done | error
   const [file, setFile] = useState(null);
   const [extracted, setExtracted] = useState(null);
@@ -205,6 +208,8 @@ export default function ClaimsProcessor() {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // claim id to confirm delete
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error" | null
+  const [reviewCompleted, setReviewCompleted] = useState(null); // null | "approve" | "escalate" | "override"
+  const [savedClaimId, setSavedClaimId] = useState(null);
 
   const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
@@ -303,6 +308,10 @@ export default function ClaimsProcessor() {
             setTimeout(() => setSaveStatus(null), 3500); // auto-hide after 3.5s
           }
           if (status === 'saved' && data.blob_uri) {
+            // Capture the real claim ID for audit trail and review console
+            if (data.claim_id) {
+              setSavedClaimId(data.claim_id);
+            }
             // Update the just-added claim record with the backend's blob URL and real ID
             setClaimsLog(prev => prev.map((item, index) => {
               if (index === 0 && !item.blob_uri) {
@@ -391,6 +400,7 @@ export default function ClaimsProcessor() {
 
   const reset = () => {
     setStage("idle"); setFile(null); setExtracted(null); setEvaluation(null); setError(null);
+    setReviewCompleted(null); setSavedClaimId(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -800,6 +810,15 @@ export default function ClaimsProcessor() {
                     fontSize: 11, fontWeight: 800, cursor: "pointer", transition: "all 0.3s ease"
                   }}
                 >RULES</button>
+                <button
+                  onClick={() => setView('governance')}
+                  style={{
+                    padding: "6px 16px", borderRadius: "8px", border: "none",
+                    background: view === 'governance' ? colors.accent : "transparent",
+                    color: view === 'governance' ? colors.bg : colors.text,
+                    fontSize: 11, fontWeight: 800, cursor: "pointer", transition: "all 0.3s ease"
+                  }}
+                >GOVERNANCE</button>
               </div>
 
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
@@ -813,6 +832,8 @@ export default function ClaimsProcessor() {
 
               {view === "rules" ? (
                 <RulesManagement colors={colors} getToken={getToken} />
+              ) : view === "governance" ? (
+                <GovernancePanel colors={colors} getToken={getToken} />
               ) : (
                 <>
                   {/* Upload Zone */}
@@ -1058,10 +1079,87 @@ export default function ClaimsProcessor() {
                         </div>
                       </div>
 
+                      {/* Risk Tier + Processing Mode + Review Triggers */}
+                      <div style={{
+                        display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap", alignItems: "stretch"
+                      }}>
+                        {/* Risk Tier Badge */}
+                        {evaluation.riskTier && (
+                          <div style={{
+                            padding: "12px 16px", borderRadius: 12, flex: "1 1 auto", minWidth: 120,
+                            background: evaluation.riskTier === "high" ? "rgba(239, 68, 68, 0.1)" : evaluation.riskTier === "medium" ? "rgba(245, 158, 11, 0.1)" : "rgba(16, 185, 129, 0.1)",
+                            border: `1px solid ${evaluation.riskTier === "high" ? "rgba(239, 68, 68, 0.3)" : evaluation.riskTier === "medium" ? "rgba(245, 158, 11, 0.3)" : "rgba(16, 185, 129, 0.3)"}`,
+                          }}>
+                            <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, fontWeight: 700, marginBottom: 6, letterSpacing: "0.08em" }}>RISK TIER</div>
+                            <div style={{
+                              fontSize: 16, fontWeight: 800,
+                              color: evaluation.riskTier === "high" ? "#ef4444" : evaluation.riskTier === "medium" ? "#f59e0b" : "#10b981"
+                            }}>
+                              {evaluation.riskTier === "high" ? "🔴 HIGH" : evaluation.riskTier === "medium" ? "🟡 MEDIUM" : "🟢 LOW"}
+                            </div>
+                          </div>
+                        )}
+                        {/* Processing Mode */}
+                        {evaluation.processingMode && (
+                          <div style={{
+                            padding: "12px 16px", borderRadius: 12, flex: "1 1 auto", minWidth: 140,
+                            background: "rgba(17, 24, 39, 0.8)",
+                            border: `1px solid ${colors.border}`,
+                          }}>
+                            <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.muted, fontWeight: 700, marginBottom: 6, letterSpacing: "0.08em" }}>PROCESSING MODE</div>
+                            <div style={{
+                              fontSize: 14, fontWeight: 700,
+                              color: evaluation.processingMode === "auto_eligible" ? "#10b981" : evaluation.processingMode === "escalated" ? "#ef4444" : "#f59e0b"
+                            }}>
+                              {evaluation.processingMode === "auto_eligible" ? "✓ Auto-Eligible" : evaluation.processingMode === "escalated" ? "⚠ Escalated" : "⚑ Review Required"}
+                            </div>
+                          </div>
+                        )}
+                        {/* Recommended Action */}
+                        {evaluation.decisionReasoning?.recommended_action && (
+                          <div style={{
+                            padding: "12px 16px", borderRadius: 12, flex: "1 1 auto", minWidth: 160,
+                            background: "rgba(28, 17, 7, 0.7)",
+                            border: `1px solid rgba(245, 158, 11, 0.3)`,
+                          }}>
+                            <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, marginBottom: 6, letterSpacing: "0.08em" }}>AI RECOMMENDATION</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#fcd34d" }}>
+                              {{
+                                auto_approve: "✓ Auto-Approve",
+                                manual_review: "⚑ Manual Review",
+                                escalate_to_specialist: "↗ Escalate to Specialist",
+                                escalate_to_investigator: "🔍 Escalate to Investigator",
+                              }[evaluation.decisionReasoning.recommended_action] || evaluation.decisionReasoning.recommended_action}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Review Triggers Card */}
+                      {evaluation.reviewTriggers?.length > 0 && (
+                        <div style={{
+                          padding: "14px 18px", borderRadius: 12, marginBottom: 24,
+                          background: "rgba(245, 158, 11, 0.06)",
+                          border: "1px solid rgba(245, 158, 11, 0.25)",
+                        }}>
+                          <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: colors.accent, fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>⚠ REVIEW TRIGGERS</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {evaluation.reviewTriggers.map((trigger, i) => (
+                              <span key={i} style={{
+                                padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                                background: "rgba(245, 158, 11, 0.12)", color: "#fcd34d",
+                                border: "1px solid rgba(245, 158, 11, 0.2)"
+                              }}>{trigger}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Tabs */}
                       <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${colors.border}`, marginBottom: 24 }}>
                         {[
                           { id: "extraction", label: "Extracted Data" },
+                          { id: "intelligence", label: "Decision Intelligence" },
                           { id: "rules", label: `Business Rules (${evaluation.results.filter(r => r.passed && r.status !== "SKIPPED").length}/${evaluation.results.filter(r => r.status !== "SKIPPED").length})` },
                           { id: "notes", label: "AI Notes" },
                         ].map(t => (
@@ -1107,13 +1205,18 @@ export default function ClaimsProcessor() {
                             { label: "Provider", key: "providerName" },
                             { label: "Contact", key: "contactNumber" },
                             { label: "Completeness Score", key: "completeness" },
-                          ].map(({ label, key }) => (
+                          ].map(({ label, key }) => {
+                            const fc = extracted.fieldConfidence?.[key];
+                            const conf = fc?.confidence;
+                            const source = fc?.source;
+                            const isLowConf = conf !== undefined && conf < 80;
+                            return (
                             <div key={key} style={{
                               padding: "14px 16px",
-                              background: "rgba(17, 24, 39, 0.8)",
+                              background: isLowConf ? "rgba(245, 158, 11, 0.05)" : "rgba(17, 24, 39, 0.8)",
                               backdropFilter: "blur(8px)",
                               borderRadius: 12,
-                              border: `1px solid ${colors.border}`,
+                              border: `1px solid ${isLowConf ? "rgba(245, 158, 11, 0.3)" : colors.border}`,
                               transition: "all 0.3s ease",
                               cursor: "default",
                               boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)",
@@ -1126,15 +1229,30 @@ export default function ClaimsProcessor() {
                                 e.currentTarget.style.transform = "translateY(-2px)";
                               }}
                               onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = colors.border;
-                                e.currentTarget.style.background = "rgba(17, 24, 39, 0.8)";
+                                e.currentTarget.style.borderColor = isLowConf ? "rgba(245, 158, 11, 0.3)" : colors.border;
+                                e.currentTarget.style.background = isLowConf ? "rgba(245, 158, 11, 0.05)" : "rgba(17, 24, 39, 0.8)";
                                 e.currentTarget.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2)";
                                 e.currentTarget.style.transform = "translateY(0)";
                               }}>
-                              <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 700 }}>{label.toUpperCase()}</div>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                <div style={{ fontSize: 11, color: colors.muted, fontFamily: "IBM Plex Mono", letterSpacing: "0.08em", fontWeight: 700 }}>{label.toUpperCase()}</div>
+                                {conf !== undefined && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    {isLowConf && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(245, 158, 11, 0.2)", color: "#fcd34d", fontWeight: 700 }}>⚠ NEEDS REVIEW</span>}
+                                    <span style={{
+                                      fontSize: 10, fontWeight: 700, fontFamily: "IBM Plex Mono",
+                                      color: conf >= 80 ? "#10b981" : conf >= 60 ? "#f59e0b" : "#ef4444",
+                                      padding: "2px 6px", borderRadius: 4,
+                                      background: conf >= 80 ? "rgba(16, 185, 129, 0.15)" : conf >= 60 ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                                    }}>{conf}%</span>
+                                  </div>
+                                )}
+                              </div>
                               <div style={{ fontSize: 15, fontWeight: 600, color: colors.text }}>{fmt(extracted[key])}</div>
+                              {source && <div style={{ fontSize: 10, color: colors.muted, marginTop: 4, fontStyle: "italic" }}>Source: {source}</div>}
                             </div>
-                          ))}
+                          )})}
+
                           {extracted.claimantAddress && (
                             <div style={{
                               gridColumn: "1 / -1", padding: "14px 16px",
@@ -1241,6 +1359,146 @@ export default function ClaimsProcessor() {
                                 </div>
                               ))}
                             </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Decision Intelligence Tab */}
+                      {activeTab === "intelligence" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 20, animation: "fadeIn 0.3s ease" }}>
+
+                          {/* Why This Recommendation? */}
+                          {evaluation.decisionReasoning?.reasons?.length > 0 && (
+                            <div style={{
+                              padding: "20px 24px", borderRadius: 14,
+                              background: "rgba(17, 24, 39, 0.9)",
+                              border: `1px solid ${colors.border}`,
+                              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+                            }}>
+                              <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.08em", marginBottom: 14, fontWeight: 700 }}>💡 WHY THIS RECOMMENDATION?</div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {evaluation.decisionReasoning.reasons.map((reason, i) => (
+                                  <div key={i} style={{
+                                    display: "flex", gap: 10, alignItems: "flex-start",
+                                    padding: "8px 12px", borderRadius: 8,
+                                    background: reason.includes("✓") ? "rgba(16, 185, 129, 0.06)" : "rgba(245, 158, 11, 0.06)",
+                                    border: `1px solid ${reason.includes("✓") ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)"}`,
+                                  }}>
+                                    <span style={{ fontSize: 14, minWidth: 20 }}>{reason.includes("✓") ? "✓" : "⚠"}</span>
+                                    <span style={{ fontSize: 13, color: "#d1d5db", lineHeight: 1.5 }}>{reason.replace(" ✓", "")}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Decision DNA Panel — The "Money Shot" */}
+                          <div style={{
+                            padding: "20px 24px", borderRadius: 14,
+                            background: "linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(28, 17, 7, 0.5))",
+                            border: `2px solid rgba(245, 158, 11, 0.3)`,
+                            boxShadow: "0 8px 32px rgba(245, 158, 11, 0.1)",
+                          }}>
+                            <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.1em", marginBottom: 6, fontWeight: 700 }}>🧬 DECISION DNA</div>
+                            <div style={{ fontSize: 11, color: colors.muted, marginBottom: 18, lineHeight: 1.5 }}>
+                              The AI processed this claim without knowing the claimant's name, their location, or how they wrote their documents. The decision is based entirely on what the policy says and what the evidence shows.
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                              {/* Left: What influenced */}
+                              <div style={{
+                                padding: "14px 16px", borderRadius: 10,
+                                background: "rgba(16, 185, 129, 0.06)",
+                                border: "1px solid rgba(16, 185, 129, 0.2)",
+                              }}>
+                                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#10b981", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>✅ WHAT INFLUENCED THIS DECISION</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {(evaluation.decisionReasoning?.rules_fired || [])
+                                    .map((rf, i) => (
+                                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#d1d5db" }}>
+                                        <span style={{ color: rf.status === "passed" ? "#10b981" : "#f59e0b", fontSize: 14, minWidth: 16 }}>{rf.status === "passed" ? "✓" : "⚠"}</span>
+                                        <span>{rf.name}</span>
+                                      </div>
+                                    ))}
+                                  {[
+                                    { label: "Policy validity status", show: true },
+                                    { label: `Claim amount ($${(extracted.claimAmount || 0).toLocaleString()})`, show: !!extracted.claimAmount },
+                                    { label: "Filing date vs incident date", show: !!(extracted.filingDate && extracted.incidentDate) },
+                                    { label: "Document completeness check", show: true },
+                                    { label: "Fraud risk indicators", show: true },
+                                    { label: "Duplicate claim check", show: true },
+                                  ].filter(x => x.show).map((item, i) => (
+                                    <div key={`static-${i}`} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#9ca3af" }}>
+                                      <span style={{ color: "#10b981", fontSize: 14, minWidth: 16 }}>•</span>
+                                      <span>{item.label}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              {/* Right: What was ignored */}
+                              <div style={{
+                                padding: "14px 16px", borderRadius: 10,
+                                background: "rgba(239, 68, 68, 0.04)",
+                                border: "1px solid rgba(239, 68, 68, 0.15)",
+                              }}>
+                                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#ef4444", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>🚫 PRESENT BUT NOT USED</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                  {(evaluation.excludedFromDecisioning || [
+                                    "Claimant name", "Claimant address / region", "Language of submission",
+                                    "Handwriting style", "Document formatting style", "Provider location",
+                                    "Claimant demographics"
+                                  ]).map((item, i) => (
+                                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#9ca3af" }}>
+                                      <span style={{ color: "#ef4444", fontSize: 12, minWidth: 16, opacity: 0.7 }}>✗</span>
+                                      <span>{item}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Trigger Groups */}
+                          {evaluation.triggerGroups && Object.values(evaluation.triggerGroups).some(g => g?.length > 0) && (
+                            <div style={{
+                              padding: "20px 24px", borderRadius: 14,
+                              background: "rgba(17, 24, 39, 0.9)",
+                              border: `1px solid ${colors.border}`,
+                            }}>
+                              <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: colors.accent, letterSpacing: "0.08em", marginBottom: 14, fontWeight: 700 }}>🔍 HITL TRIGGER ANALYSIS</div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                {[
+                                  { key: "A_extraction_uncertainty", label: "Extraction Uncertainty", icon: "📄", color: "#f59e0b" },
+                                  { key: "B_business_exceptions", label: "Business Exceptions", icon: "📋", color: "#ef4444" },
+                                  { key: "C_decision_uncertainty", label: "Decision Uncertainty", icon: "⚖️", color: "#8b5cf6" },
+                                  { key: "D_sensitive_claims", label: "Sensitive/High-Impact", icon: "🛡️", color: "#ec4899" },
+                                ].map(group => {
+                                  const triggers = evaluation.triggerGroups[group.key] || [];
+                                  return (
+                                    <div key={group.key} style={{
+                                      padding: "12px 14px", borderRadius: 10,
+                                      background: triggers.length > 0 ? `${group.color}08` : "rgba(17, 24, 39, 0.5)",
+                                      border: `1px solid ${triggers.length > 0 ? `${group.color}33` : colors.border}`,
+                                      opacity: triggers.length > 0 ? 1 : 0.5,
+                                    }}>
+                                      <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: group.color, fontWeight: 700, marginBottom: 8, letterSpacing: "0.06em" }}>
+                                        {group.icon} {group.label.toUpperCase()} ({triggers.length})
+                                      </div>
+                                      {triggers.length > 0 ? (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                          {triggers.map((t, i) => (
+                                            <div key={i} style={{ fontSize: 11, color: "#d1d5db", display: "flex", gap: 6 }}>
+                                              <span style={{ color: group.color, minWidth: 12 }}>•</span>{t}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div style={{ fontSize: 11, color: colors.muted }}>No triggers</div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           )}
                         </div>
                       )}
@@ -1441,6 +1699,46 @@ export default function ClaimsProcessor() {
                               }
                             </div>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Human Review Console */}
+                      {evaluation?.humanReviewRequired && !reviewCompleted && (
+                        <div style={{ marginTop: 24 }}>
+                          <HumanReviewConsole
+                            claim={{ id: savedClaimId }}
+                            evaluation={evaluation}
+                            extracted={extracted}
+                            colors={colors}
+                            getToken={getToken}
+                            onReviewComplete={(action) => setReviewCompleted(action)}
+                          />
+                        </div>
+                      )}
+
+                      {/* Review Completed Banner */}
+                      {reviewCompleted && (
+                        <div style={{
+                          marginTop: 24, padding: "16px 20px", borderRadius: 12,
+                          background: reviewCompleted === "approve" || reviewCompleted === "override"
+                            ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
+                          border: `1px solid ${reviewCompleted === "approve" || reviewCompleted === "override"
+                            ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
+                          animation: "slideIn 0.4s ease",
+                        }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: reviewCompleted === "approve" || reviewCompleted === "override" ? "#10b981" : "#f59e0b" }}>
+                            {reviewCompleted === "approve" ? "✓ Claim Approved" :
+                             reviewCompleted === "override" ? "✓ AI Override Submitted" :
+                             "⤴ Claim Escalated"}
+                          </div>
+                          <div style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>Your review has been recorded in the audit trail.</div>
+                        </div>
+                      )}
+
+                      {/* Audit Trail */}
+                      {savedClaimId && (
+                        <div style={{ marginTop: 24 }}>
+                          <AuditTrail claimId={savedClaimId} colors={colors} getToken={getToken} />
                         </div>
                       )}
 

@@ -21,6 +21,14 @@ class ClaimsState(TypedDict):
     # Configuration
     rule_config: Optional[dict]
     
+    # HITL + Explainability
+    decision_reasoning: Optional[dict]
+    risk_tier: Optional[str]
+    processing_mode: Optional[str]
+    review_triggers: Optional[List[str]]
+    trigger_groups: Optional[dict]
+    low_confidence_fields: Optional[List[str]]
+    
     # Outputs
     evaluation: Optional[dict]
     routing: Optional[str]

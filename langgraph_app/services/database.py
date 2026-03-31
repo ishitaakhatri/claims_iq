@@ -5,6 +5,7 @@ import time
 import asyncio
 from datetime import datetime, timezone
 import psycopg2
+import psycopg2.pool
 import asyncpg
 from dotenv import load_dotenv
 
@@ -13,41 +14,117 @@ load_dotenv(override=True)
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1  # seconds
 
+# ─── Connection Pool ──────────────────────────────────────────────────────────
+# Maintains reusable connections to avoid TCP+SSL handshake on every DB call.
+_connection_pool = None
+
+def _get_pool():
+    """Lazily initialize the connection pool (2-10 connections)."""
+    global _connection_pool
+    if _connection_pool is None or _connection_pool.closed:
+        host = os.getenv("DB_HOST", "").strip()
+        user = os.getenv("DB_USER", "").strip()
+        port = os.getenv("DB_PORT", "5432").strip()
+        dbname = os.getenv("DB_NAME", "claims_iq").strip()
+        password = os.getenv("DB_PASSWORD", "").strip()
+        sslmode = os.getenv("DB_SSLMODE", "require").strip()
+        
+        print(f"[Database] Initializing connection pool to {host}...")
+        _connection_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=10,
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=user,
+            password=password,
+            sslmode=sslmode,
+        )
+        print(f"[Database] Connection pool ready (2-10 connections).")
+    return _connection_pool
+
+
+class PooledConnection:
+    """Wraps a psycopg2 connection so .close() returns it to the pool instead of destroying it."""
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+    
+    def close(self):
+        """Return connection to pool instead of closing."""
+        try:
+            self._pool.putconn(self._conn)
+        except Exception:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+    
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args):
+        self.close()
+
 
 def get_db_connection():
     """
-    Creates and returns a PostgreSQL connection using environment variables.
-    Retries up to MAX_RETRIES times with exponential backoff for transient errors
-    (e.g. DNS resolution failures on Azure).
+    Borrows a connection from the pool, wrapped so .close() returns it.
+    Falls back to a direct connection if pool is exhausted.
     """
+    try:
+        pool = _get_pool()
+        conn = pool.getconn()
+        conn.autocommit = False
+        return PooledConnection(conn, pool)
+    except (psycopg2.pool.PoolError, psycopg2.OperationalError) as e:
+        print(f"[Database] Pool error, falling back to direct connection: {e}")
+        return _direct_connect()
+
+
+def return_db_connection(conn):
+    """Returns a connection back to the pool for reuse."""
+    if conn is None:
+        return
+    try:
+        pool = _get_pool()
+        pool.putconn(conn)
+    except Exception:
+        # If pool is broken, just close the connection directly
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _direct_connect():
+    """Direct connection fallback (no pooling)."""
     host = os.getenv("DB_HOST", "").strip()
     user = os.getenv("DB_USER", "").strip()
     port = os.getenv("DB_PORT", "5432").strip()
     dbname = os.getenv("DB_NAME", "claims_iq").strip()
     password = os.getenv("DB_PASSWORD", "").strip()
     sslmode = os.getenv("DB_SSLMODE", "require").strip()
-    
+
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            print(f"[Database] Connecting to {host} as {user}...")
+            print(f"[Database] Direct connecting to {host}...")
             return psycopg2.connect(
-                host=host,
-                port=port,
-                dbname=dbname,
-                user=user,
-                password=password,
-                sslmode=sslmode,
+                host=host, port=port, dbname=dbname,
+                user=user, password=password, sslmode=sslmode,
             )
         except psycopg2.OperationalError as e:
             last_error = e
             if attempt < MAX_RETRIES:
                 delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                print(f"[Database] Connection attempt {attempt}/{MAX_RETRIES} failed: {e}")
-                print(f"[Database] Retrying in {delay}s...")
+                print(f"[Database] Attempt {attempt}/{MAX_RETRIES} failed, retrying in {delay}s...")
                 time.sleep(delay)
-            else:
-                print(f"[Database] All {MAX_RETRIES} connection attempts failed.")
+    raise last_error
+
     raise last_error
 
 
@@ -58,9 +135,11 @@ def save_claim_to_db(
     status: str,
     extracted_data: dict,
     evaluation_results: dict,
+    review_status: str = "pending",
 ) -> str:
     """
     Inserts a claim record into the claims_history table.
+    Also creates initial AI audit trail entries.
     Returns the generated claim UUID.
     """
     claim_id = str(uuid.uuid4())
@@ -68,12 +147,13 @@ def save_claim_to_db(
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        
         cursor.execute(
             """
             INSERT INTO claims_history 
-                (id, user_id, form_category, blob_uri, status, extracted_data, evaluation_results, created_at)
+                (id, user_id, form_category, blob_uri, status, extracted_data, evaluation_results, review_status, created_at)
             VALUES 
-                (%s, %s, %s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 claim_id,
@@ -83,18 +163,80 @@ def save_claim_to_db(
                 status,
                 json.dumps(extracted_data),
                 json.dumps(evaluation_results),
+                review_status,
                 datetime.now(timezone.utc),
             ),
         )
         conn.commit()
         cursor.close()
-        print(f"[Database] Claim saved: {claim_id}")
+        print(f"[Database] Claim saved: {claim_id} (review_status: {review_status})")
+        
+        # Create initial AI audit trail entries (non-blocking)
+        try:
+            _create_initial_audit_trail(claim_id, extracted_data, evaluation_results)
+        except Exception as e:
+            print(f"[Database] Warning: Could not create initial audit trail: {e}")
+        
         return claim_id
     except Exception as e:
         print(f"[Database] Error saving claim: {e}")
         if conn:
             conn.rollback()
         raise
+    finally:
+        if conn:
+            conn.close()
+
+
+def _create_initial_audit_trail(claim_id: str, extracted_data: dict, evaluation_results: dict):
+    """Creates the initial AI audit trail entries when a claim is first processed."""
+    ensure_review_tables()
+    
+    confidence = evaluation_results.get("confidence", 0)
+    routing = evaluation_results.get("routing", "UNKNOWN")
+    decision = evaluation_results.get("decisionReasoning", {})
+    recommended_action = decision.get("recommended_action", routing)
+    reasons = decision.get("reasons", [])
+    
+    entries = [
+        ("ai_engine", "document_scanned", "Document scanned and text extracted via OCR",
+         json.dumps({"completeness": extracted_data.get("completeness", 0)})),
+        ("ai_engine", "fields_extracted", 
+         f"Fields extracted with {confidence}% confidence",
+         json.dumps({
+             "field_count": len([k for k in extracted_data.keys() if k not in ("fieldConfidence", "additionalFields", "reviewTriggers", "riskTier", "processingMode")]),
+             "low_confidence_fields": [f for f, d in extracted_data.get("fieldConfidence", {}).items() 
+                                       if isinstance(d, dict) and d.get("confidence", 100) < 80 and f != "INSTRUCTION"],
+         })),
+        ("ai_engine", "recommendation_generated",
+         f"Recommendation: {recommended_action} ({', '.join(reasons[:3])})",
+         json.dumps({
+             "recommended_action": recommended_action,
+             "routing": routing,
+             "confidence": confidence,
+             "reasons": reasons,
+         })),
+    ]
+    
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for actor_type, action, details, metadata in entries:
+            cursor.execute(
+                """
+                INSERT INTO claim_audit_trail (claim_id, actor_type, actor_id, action, details, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (claim_id, actor_type, "system", action, details, metadata)
+            )
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Created {len(entries)} initial audit trail entries for claim {claim_id}")
+    except Exception as e:
+        print(f"[Database] Error creating initial audit trail: {e}")
+        if conn:
+            conn.rollback()
     finally:
         if conn:
             conn.close()
@@ -748,6 +890,309 @@ def delete_claim(claim_id: str, user_id: str, is_admin: bool = False) -> bool:
         if conn:
             conn.rollback()
         return False
+    finally:
+        if conn:
+            conn.close()
+
+
+# ─── HITL: Review Tables & Audit Trail ─────────────────────────────────────────
+
+def ensure_review_tables():
+    """Creates the claim_reviews and claim_audit_trail tables if they do not exist."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS claim_reviews (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                claim_id UUID NOT NULL,
+                reviewer_id UUID NOT NULL,
+                action VARCHAR(50) NOT NULL,
+                ai_recommendation VARCHAR(50),
+                human_decision VARCHAR(50),
+                override_reason VARCHAR(100),
+                reviewer_note TEXT,
+                edited_fields JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS claim_audit_trail (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                claim_id UUID NOT NULL,
+                actor_type VARCHAR(20) NOT NULL,
+                actor_id VARCHAR(100),
+                action VARCHAR(100) NOT NULL,
+                details TEXT,
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        
+        # Ensure review_status column exists on claims_history
+        cursor.execute("""
+            ALTER TABLE claims_history 
+            ADD COLUMN IF NOT EXISTS review_status VARCHAR(30) DEFAULT 'pending'
+        """)
+        
+        conn.commit()
+        cursor.close()
+        print("[Database] HITL tables ensured (claim_reviews, claim_audit_trail, review_status column).")
+    except Exception as e:
+        print(f"[Database] Error ensuring review tables: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+
+def save_review(
+    claim_id: str,
+    reviewer_id: str,
+    action: str,
+    ai_recommendation: str = None,
+    human_decision: str = None,
+    override_reason: str = None,
+    reviewer_note: str = None,
+    edited_fields: dict = None,
+) -> str:
+    """
+    Inserts a human review record.
+    Returns the review UUID.
+    """
+    ensure_review_tables()
+    review_id = str(uuid.uuid4())
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO claim_reviews 
+                (id, claim_id, reviewer_id, action, ai_recommendation, human_decision, 
+                 override_reason, reviewer_note, edited_fields)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                review_id, claim_id, reviewer_id, action,
+                ai_recommendation, human_decision,
+                override_reason, reviewer_note,
+                json.dumps(edited_fields or {}),
+            )
+        )
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Review saved: {review_id} for claim {claim_id} (action: {action})")
+        return review_id
+    except Exception as e:
+        print(f"[Database] Error saving review: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+
+def save_audit_entry(
+    claim_id: str,
+    actor_type: str,
+    actor_id: str,
+    action: str,
+    details: str = "",
+    metadata: dict = None,
+) -> str:
+    """Appends an entry to the claim audit trail."""
+    ensure_review_tables()
+    entry_id = str(uuid.uuid4())
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO claim_audit_trail 
+                (id, claim_id, actor_type, actor_id, action, details, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                entry_id, claim_id, actor_type, actor_id,
+                action, details, json.dumps(metadata or {}),
+            )
+        )
+        conn.commit()
+        cursor.close()
+        return entry_id
+    except Exception as e:
+        print(f"[Database] Error saving audit entry: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_audit_trail(claim_id: str) -> list:
+    """Fetches the full audit trail for a claim, ordered chronologically."""
+    ensure_review_tables()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, actor_type, actor_id, action, details, metadata, created_at
+            FROM claim_audit_trail
+            WHERE claim_id = %s
+            ORDER BY created_at ASC
+            """,
+            (claim_id,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        
+        trail = []
+        for row in rows:
+            meta = row[5] if isinstance(row[5], dict) else json.loads(row[5]) if row[5] else {}
+            trail.append({
+                "id": str(row[0]),
+                "actor_type": row[1],
+                "actor_id": row[2],
+                "action": row[3],
+                "details": row[4],
+                "metadata": meta,
+                "created_at": row[6].isoformat() if row[6] else None,
+            })
+        
+        print(f"[Database] Fetched {len(trail)} audit trail entries for claim {claim_id}")
+        return trail
+    except Exception as e:
+        print(f"[Database] Error fetching audit trail: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_claim_review_status(claim_id: str, new_status: str) -> bool:
+    """Updates the review_status column on a claim."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE claims_history SET review_status = %s WHERE id = %s",
+            (new_status, claim_id)
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        cursor.close()
+        print(f"[Database] Claim {claim_id} review_status -> {new_status}: {updated}")
+        return updated
+    except Exception as e:
+        print(f"[Database] Error updating review status: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_governance_metrics(user_id: str = None, is_admin: bool = False) -> dict:
+    """
+    Aggregates governance statistics from claims_history and claim_reviews.
+    Returns metrics dict for the Governance Panel.
+    """
+    ensure_review_tables()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Total claims
+        if is_admin:
+            cursor.execute("SELECT COUNT(*) FROM claims_history")
+        else:
+            cursor.execute("SELECT COUNT(*) FROM claims_history WHERE user_id = %s", (user_id,))
+        total_claims = cursor.fetchone()[0] or 0
+        
+        if total_claims == 0:
+            cursor.close()
+            return {
+                "total_claims": 0,
+                "pct_auto_approved": 0,
+                "pct_sent_to_review": 0,
+                "pct_escalated": 0,
+                "pct_human_overrides": 0,
+                "avg_extraction_confidence": 0,
+                "high_risk_routing_rate": 0,
+                "fraud_flag_rate": 0,
+            }
+        
+        # Status breakdown
+        status_query = """
+            SELECT 
+                COUNT(*) FILTER (WHERE review_status = 'auto_approved') as auto_approved,
+                COUNT(*) FILTER (WHERE review_status IN ('review_required', 'under_review')) as sent_to_review,
+                COUNT(*) FILTER (WHERE review_status = 'escalated') as escalated,
+                COUNT(*) FILTER (WHERE status = 'ESCALATE') as routed_escalate
+            FROM claims_history
+        """
+        if not is_admin:
+            status_query += " WHERE user_id = %s"
+            cursor.execute(status_query, (user_id,))
+        else:
+            cursor.execute(status_query)
+        row = cursor.fetchone()
+        auto_approved = row[0] or 0
+        sent_to_review = row[1] or 0
+        escalated = row[2] or 0
+        routed_escalate = row[3] or 0
+        
+        # Human overrides count
+        cursor.execute("SELECT COUNT(*) FROM claim_reviews WHERE action = 'override'")
+        overrides = cursor.fetchone()[0] or 0
+        
+        # Avg confidence from evaluation_results
+        conf_query = """
+            SELECT AVG((evaluation_results::jsonb->>'confidence')::numeric)
+            FROM claims_history
+            WHERE evaluation_results IS NOT NULL
+              AND evaluation_results::jsonb->>'confidence' IS NOT NULL
+        """
+        if not is_admin:
+            conf_query += " AND user_id = %s"
+            cursor.execute(conf_query, (user_id,))
+        else:
+            cursor.execute(conf_query)
+        avg_conf = cursor.fetchone()[0]
+        avg_confidence = round(float(avg_conf)) if avg_conf else 0
+        
+        cursor.close()
+        
+        return {
+            "total_claims": total_claims,
+            "pct_auto_approved": round((auto_approved / total_claims) * 100) if total_claims else 0,
+            "pct_sent_to_review": round((sent_to_review / total_claims) * 100) if total_claims else 0,
+            "pct_escalated": round((max(escalated, routed_escalate) / total_claims) * 100) if total_claims else 0,
+            "pct_human_overrides": round((overrides / total_claims) * 100) if total_claims else 0,
+            "avg_extraction_confidence": avg_confidence,
+            "high_risk_routing_rate": round((routed_escalate / total_claims) * 100) if total_claims else 0,
+            "fraud_flag_rate": 0,  # Would need fraudScore aggregation
+        }
+    except Exception as e:
+        print(f"[Database] Error computing governance metrics: {e}")
+        return {
+            "total_claims": 0, "pct_auto_approved": 0, "pct_sent_to_review": 0,
+            "pct_escalated": 0, "pct_human_overrides": 0,
+            "avg_extraction_confidence": 0, "high_risk_routing_rate": 0, "fraud_flag_rate": 0,
+        }
     finally:
         if conn:
             conn.close()

@@ -114,7 +114,15 @@ Return ONLY a valid JSON object with these exact fields:
   "missingFields": ["list of important missing fields"],
   "additionalFields": {
     "description": "A dictionary capturing EVERY other field, detail, data point, line item, or piece of information found in the document that is NOT already covered by the fixed fields above. Use human-readable camelCase keys and preserve the original values. Examples: diagnosisCode, deductibleAmount, adjusterName, providerNPI, treatmentDate, serviceDescription, copayAmount, priorAuthNumber, referralNumber, employerName, dateOfBirth, gender, relationshipToInsured, groupNumber, planName, billingCode, unitCount, allowedAmount, patientAccountNumber, renderingProvider, facilityName, placeOfService, referringPhysician, accidentDate, accidentLocation, witnessInfo, policeReportNumber, damageDescription, repairEstimate, replacementCost, etc. Include ALL data you can find — do not omit anything. If no additional fields exist, use an empty object {}."
-  }
+  },
+  "fieldConfidence": {
+    "INSTRUCTION": "For EVERY extracted field above (claimNumber, claimantName, claimantId, policyNumber, policyStatus, claimType, claimAmount, incidentDate, filingDate, providerName, contactNumber, completeness), provide an object with 'confidence' (0-100 integer) and 'source' (short string describing where in the document this value was found, e.g. 'Claim Form Header', 'Invoice Table Row 2', 'Handwritten note page 3'). Use your honest assessment of extraction certainty.",
+    "claimNumber": { "confidence": 95, "source": "Claim Form Header" },
+    "claimAmount": { "confidence": 70, "source": "Invoice total line" }
+  },
+  "reviewTriggers": ["Array of specific issues that should trigger human review. Examples: 'Missing mandatory invoice', 'Claim amount unclear or ambiguous', 'Date mismatch between forms', 'Blurry or unreadable scan area', 'Policy status could not be verified', 'High repair estimate', 'Multiple conflicting values found'. Be specific to THIS document."],
+  "riskTier": "low | medium | high (low = all fields clear and complete, medium = some missing/unclear fields or moderate concerns, high = major gaps, high fraud risk, or conflicting information)",
+  "processingMode": "auto_eligible | review_required | escalated (auto_eligible = all fields confident and no red flags, review_required = some low-confidence fields or missing docs, escalated = high fraud risk or major issues)"
 }
 
 CRITICAL INSTRUCTIONS FOR fraudScore AND fraudReasons:
@@ -124,6 +132,12 @@ CRITICAL INSTRUCTIONS FOR fraudScore AND fraudReasons:
 - If fraudScore is 61+: MUST provide 3+ specific reasons in fraudReasons array
 - Reasons must be specific to THIS document, not generic
 - Each reason should be a clear, actionable statement
+
+CRITICAL INSTRUCTIONS FOR fieldConfidence:
+- Provide a confidence entry for EVERY main extracted field (claimNumber, claimantName, claimantId, policyNumber, policyStatus, claimType, claimAmount, incidentDate, filingDate, providerName, contactNumber, completeness)
+- confidence: 90-100 = clearly visible and unambiguous, 70-89 = readable but some uncertainty, 50-69 = partially visible or inferred, 0-49 = guessed or very unclear
+- source: describe the specific location in the document (e.g. "Page 1 header", "Table row 3", "Handwritten field top-right")
+- If a field is null/missing, set confidence to 0 and source to "Not found in document"
 
 CRITICAL INSTRUCTIONS FOR additionalFields:
 - Scan the ENTIRE document text thoroughly for ANY data not captured in the fixed fields

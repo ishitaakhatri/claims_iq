@@ -15,7 +15,9 @@ from .services.database import (
     save_claim_to_db, get_claims_history, backfill_orphaned_claims,
     get_all_rules, upsert_rule, delete_rule,
     register_session, check_active_session, terminate_session,
-    delete_claim, get_db_connection
+    delete_claim, get_db_connection,
+    ensure_review_tables, save_review, save_audit_entry,
+    get_audit_trail, get_governance_metrics, update_claim_review_status,
 )
 from .services.rules_cache import rules_cache
 from .auth import get_current_user
@@ -52,6 +54,15 @@ class RuleRequest(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     context: Optional[dict] = None
+
+class ReviewRequest(BaseModel):
+    action: str  # approve, edit_field, reject_field, confirm_field, request_docs, escalate, override, add_note
+    field_name: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    override_reason: Optional[str] = None
+    reviewer_note: Optional[str] = None
+    escalate_to: Optional[str] = None
 
 class SessionRequest(BaseModel):
     session_token: str
@@ -502,12 +513,21 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
                         print(f"[Integration] Attempting to save claim record to DB...")
                         status = evaluation.get("routing", "PROCESSED") if evaluation else "PROCESSED"
                         form_category = (extracted_data or {}).get("claimType", "Medical Claim")
+                        # Determine initial review_status from evaluation
+                        processing_mode = (evaluation or {}).get("processingMode", "pending")
+                        review_status_map = {
+                            "auto_eligible": "auto_approved",
+                            "review_required": "review_required",
+                            "escalated": "escalated",
+                        }
+                        review_status = review_status_map.get(processing_mode, "pending")
                         claim_id = await loop.run_in_executor(
                             None, save_claim_to_db,
                             internal_user_id, form_category, "",
                             status, extracted_data or {}, evaluation or {},
+                            review_status,
                         )
-                        print(f"[Integration] DB save successful: {claim_id}")
+                        print(f"[Integration] DB save successful: {claim_id} (review: {review_status})")
                     except Exception as e:
                         print(f"[Integration] DB save failed (non-fatal): {e}")
                         errors.append(f"db: {e}")
@@ -546,6 +566,195 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ─── HITL & Governance Endpoints ───────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_ensure_hitl_tables():
+    """Ensure HITL tables exist on startup."""
+    try:
+        ensure_review_tables()
+    except Exception as e:
+        print(f"[Startup] Warning: Could not ensure HITL tables: {e}")
+
+
+@app.post("/claims/{claim_id}/review")
+async def submit_review(claim_id: str, request: ReviewRequest, user_info: dict = Depends(get_current_user)):
+    """
+    Submit a human review action on a claim.
+    Actions: approve, edit_field, reject_field, confirm_field, request_docs, escalate, override, add_note
+    """
+    reviewer_id = user_info.get("id")
+    
+    # Validate override requires a reason
+    if request.action == "override" and not request.override_reason:
+        raise HTTPException(status_code=400, detail="Override reason is required when action is 'override'")
+    
+    try:
+        # Save the review record
+        review_id = save_review(
+            claim_id=claim_id,
+            reviewer_id=reviewer_id,
+            action=request.action,
+            ai_recommendation=None,  # Could be populated from claim data
+            human_decision=request.action,
+            override_reason=request.override_reason,
+            reviewer_note=request.reviewer_note,
+            edited_fields={"field": request.field_name, "old": request.old_value, "new": request.new_value} if request.field_name else {},
+        )
+        
+        # Create audit trail entry
+        action_labels = {
+            "approve": "Approved claim",
+            "edit_field": f"Edited field: {request.field_name}",
+            "reject_field": f"Rejected field: {request.field_name}",
+            "confirm_field": f"Confirmed field: {request.field_name}",
+            "request_docs": "Requested additional documents",
+            "escalate": f"Escalated to {request.escalate_to or 'specialist'}",
+            "override": f"Overrode AI recommendation (Reason: {request.override_reason})",
+            "add_note": "Added reviewer note",
+        }
+        details = action_labels.get(request.action, request.action)
+        if request.reviewer_note:
+            details += f" — Note: {request.reviewer_note}"
+        
+        save_audit_entry(
+            claim_id=claim_id,
+            actor_type="reviewer",
+            actor_id=reviewer_id,
+            action=request.action,
+            details=details,
+            metadata={
+                "field_name": request.field_name,
+                "old_value": request.old_value,
+                "new_value": request.new_value,
+                "override_reason": request.override_reason,
+                "escalate_to": request.escalate_to,
+            },
+        )
+        
+        # Update claim review_status based on action
+        status_map = {
+            "approve": "approved",
+            "escalate": "escalated",
+            "override": "approved",  # Override means human made final decision
+            "request_docs": "pending_documentation",
+        }
+        new_status = status_map.get(request.action)
+        if new_status:
+            update_claim_review_status(claim_id, new_status)
+        
+        return {"status": "success", "review_id": review_id, "message": f"Review action '{request.action}' recorded."}
+    except Exception as e:
+        print(f"[API] Review Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/claims/{claim_id}/audit-trail")
+async def get_claim_audit_trail(claim_id: str, user_info: dict = Depends(get_current_user)):
+    """Get the full audit trail for a claim."""
+    try:
+        trail = get_audit_trail(claim_id)
+        return {"status": "success", "claim_id": claim_id, "audit_trail": trail}
+    except Exception as e:
+        print(f"[API] Audit Trail Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/claims/{claim_id}/review-status")
+async def update_review_status(claim_id: str, status: str, user_info: dict = Depends(get_current_user)):
+    """Update the review status of a claim."""
+    valid_statuses = ["pending", "auto_approved", "review_required", "under_review", "approved", "rejected", "escalated", "pending_documentation"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    try:
+        updated = update_claim_review_status(claim_id, status)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found")
+        
+        # Audit entry for status change
+        save_audit_entry(
+            claim_id=claim_id,
+            actor_type="reviewer",
+            actor_id=user_info.get("id"),
+            action="status_changed",
+            details=f"Review status changed to: {status}",
+            metadata={"new_status": status},
+        )
+        
+        return {"status": "success", "claim_id": claim_id, "review_status": status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Status Update Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/governance/metrics")
+async def governance_metrics(user_info: dict = Depends(get_current_user)):
+    """Returns governance dashboard metrics."""
+    try:
+        is_admin = (user_info.get("role") == "admin")
+        metrics = get_governance_metrics(
+            user_id=user_info.get("id"),
+            is_admin=is_admin,
+        )
+        return {"status": "success", "metrics": metrics}
+    except Exception as e:
+        print(f"[API] Governance Metrics Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/governance/policy")
+async def governance_policy(user_info: dict = Depends(get_current_user)):
+    """
+    Returns the governance policy configuration.
+    Includes the Decision Feature Whitelist and excluded features.
+    """
+    from .graph.nodes import DECISION_FEATURE_WHITELIST, EXCLUDED_FROM_DECISIONING
+    
+    return {
+        "status": "success",
+        "policy": {
+            "allowed_features": sorted(list(DECISION_FEATURE_WHITELIST)),
+            "excluded_features": EXCLUDED_FROM_DECISIONING,
+            "controls": [
+                {
+                    "id": "policy_decisioning",
+                    "title": "Policy-Relevant Decisioning Only",
+                    "description": "Automated recommendations are based only on policy, claim evidence, and business rules.",
+                    "status": "active",
+                },
+                {
+                    "id": "protected_features",
+                    "title": "Protected Features Excluded",
+                    "description": "Sensitive or irrelevant claimant attributes are excluded from automated decision logic.",
+                    "status": "active",
+                },
+                {
+                    "id": "confidence_escalation",
+                    "title": "Confidence-Based Human Escalation",
+                    "description": "Low-confidence or high-risk claims are automatically routed for human validation.",
+                    "status": "active",
+                },
+                {
+                    "id": "explainability",
+                    "title": "Explainability for Every Recommendation",
+                    "description": "Every recommendation includes traceable reasoning, evidence references, and triggered rules.",
+                    "status": "active",
+                },
+                {
+                    "id": "drift_monitoring",
+                    "title": "Override & Drift Monitoring",
+                    "description": "Human overrides and claim outcome patterns are monitored to identify model drift and inconsistent decision behavior.",
+                    "status": "active",
+                },
+            ],
+        },
+    }
+
 
 # Serve static files from the React build if available
 if os.path.exists("dist"):

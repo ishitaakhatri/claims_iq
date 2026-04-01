@@ -1228,7 +1228,7 @@ export default function ClaimsProcessor() {
                             style={{
                               display: "inline-flex", alignItems: "center", gap: 7,
                               padding: "9px 18px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-                              fontFamily: "'Barlow', sans-serif", cursor: "pointer", border: "none",
+                              fontFamily: "'Barlow', sans-serif", cursor: "pointer",
                               background: manualReviewOpen
                                 ? "rgba(245, 158, 11, 0.18)"
                                 : "rgba(245, 158, 11, 0.08)",

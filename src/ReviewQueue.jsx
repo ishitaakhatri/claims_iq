@@ -4,10 +4,10 @@ import HumanReviewConsole from "./HumanReviewConsole.jsx";
 const API_URL = import.meta.env.PROD ? "" : "http://localhost:8000";
 
 const STATUS_META = {
-  review_required:      { label: "Needs Review",    color: "#f59e0b", bg: "rgba(245,158,11,0.1)",  border: "rgba(245,158,11,0.3)"  },
-  under_review:         { label: "Under Review",    color: "#93c5fd", bg: "rgba(147,197,253,0.1)", border: "rgba(147,197,253,0.3)" },
-  escalated:            { label: "Escalated",       color: "#ef4444", bg: "rgba(239,68,68,0.1)",   border: "rgba(239,68,68,0.3)"   },
-  pending_documentation:{ label: "Awaiting Docs",   color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.3)" },
+  review_required:      { label: "Needs Review",    color: "#f59e0b", bg: "rgba(245,158,11,0.1)",  border: "rgba(245,158,11,0.3)",  icon: "⚑" },
+  under_review:         { label: "Under Review",    color: "#93c5fd", bg: "rgba(147,197,253,0.1)", border: "rgba(147,197,253,0.3)", icon: "🔍" },
+  escalated:            { label: "Escalated",       color: "#ef4444", bg: "rgba(239,68,68,0.1)",   border: "rgba(239,68,68,0.3)",   icon: "⤴" },
+  pending_documentation:{ label: "Awaiting Docs",   color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.3)", icon: "📄" },
 };
 
 const RISK_COLOR = { high: "#ef4444", medium: "#f59e0b", low: "#10b981" };
@@ -19,7 +19,8 @@ function StatusPill({ status }) {
       padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700,
       fontFamily: "IBM Plex Mono", letterSpacing: "0.06em",
       background: m.bg, border: `1px solid ${m.border}`, color: m.color,
-    }}>{m.label.toUpperCase()}</span>
+      display: "inline-flex", alignItems: "center", gap: 5,
+    }}>{m.icon} {m.label.toUpperCase()}</span>
   );
 }
 
@@ -30,6 +31,7 @@ export default function ReviewQueue({ colors, getToken }) {
   const [reviewDone, setReviewDone] = useState({}); // claimId -> action
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterRisk, setFilterRisk] = useState("all");
+  const [markingDocsReceived, setMarkingDocsReceived] = useState(null); // claimId being marked
 
   const load = async () => {
     setLoading(true);
@@ -57,17 +59,69 @@ export default function ReviewQueue({ colors, getToken }) {
 
   const handleReviewComplete = (claimId, action) => {
     setReviewDone(prev => ({ ...prev, [claimId]: action }));
-    // Optimistically remove from queue after a short delay
-    setTimeout(() => {
-      setQueue(prev => prev.filter(c => c.id !== claimId));
-      if (selected?.id === claimId) setSelected(null);
-    }, 1200);
+
+    if (action === "request_docs") {
+      // Update status in-place to "Awaiting Docs" instead of removing
+      setQueue(prev => prev.map(c =>
+        c.id === claimId ? { ...c, review_status: "pending_documentation" } : c
+      ));
+      // Also update the selected claim if it's the one being viewed
+      setSelected(prev =>
+        prev?.id === claimId ? { ...prev, review_status: "pending_documentation" } : prev
+      );
+      // Clear the reviewDone after a brief flash so the claim is still usable
+      setTimeout(() => {
+        setReviewDone(prev => {
+          const next = { ...prev };
+          delete next[claimId];
+          return next;
+        });
+      }, 2000);
+    } else {
+      // Terminal actions: remove from queue after a short delay
+      setTimeout(() => {
+        setQueue(prev => prev.filter(c => c.id !== claimId));
+        if (selected?.id === claimId) setSelected(null);
+      }, 1200);
+    }
+  };
+
+  const handleMarkDocsReceived = async (claimId) => {
+    setMarkingDocsReceived(claimId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/claims/${claimId}/review-status?status=review_required`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        // Update in-place
+        setQueue(prev => prev.map(c =>
+          c.id === claimId ? { ...c, review_status: "review_required" } : c
+        ));
+        setSelected(prev =>
+          prev?.id === claimId ? { ...prev, review_status: "review_required" } : prev
+        );
+        console.log(`[ReviewQueue] Claim ${claimId} → review_required (docs received)`);
+      }
+    } catch (e) {
+      console.error("[ReviewQueue] mark docs received error", e);
+    } finally {
+      setMarkingDocsReceived(null);
+    }
   };
 
   const btnBase = {
     border: "none", borderRadius: 8, fontSize: 11, fontWeight: 700,
     cursor: "pointer", fontFamily: "'Barlow', sans-serif", transition: "all 0.2s",
   };
+
+  // Count by status for filter badges
+  const statusCounts = {};
+  queue.forEach(c => {
+    const s = c.review_status || "review_required";
+    statusCounts[s] = (statusCounts[s] || 0) + 1;
+  });
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -113,8 +167,17 @@ export default function ReviewQueue({ colors, getToken }) {
               background: filterStatus === s ? "rgba(245,158,11,0.2)" : "transparent",
               border: `1px solid ${filterStatus === s ? colors.accent : colors.border}`,
               color: filterStatus === s ? colors.accent : colors.muted,
+              display: "flex", alignItems: "center", gap: 5,
             }}>
               {s === "all" ? "ALL" : STATUS_META[s]?.label.toUpperCase()}
+              {s !== "all" && statusCounts[s] ? (
+                <span style={{
+                  fontSize: 9, fontFamily: "IBM Plex Mono", fontWeight: 800,
+                  padding: "1px 5px", borderRadius: 4,
+                  background: `${STATUS_META[s]?.color || colors.accent}22`,
+                  color: STATUS_META[s]?.color || colors.accent,
+                }}>{statusCounts[s]}</span>
+              ) : null}
             </button>
           ))}
           <div style={{ width: 1, background: colors.border, margin: "0 2px" }} />
@@ -150,18 +213,35 @@ export default function ReviewQueue({ colors, getToken }) {
             {filtered.map(claim => {
               const isSelected = selected?.id === claim.id;
               const isDone = !!reviewDone[claim.id];
+              const isEscalated = claim.review_status === "escalated";
+              const isPendingDocs = claim.review_status === "pending_documentation";
+
+              // Distinct left-border accents for escalated vs pending_docs
+              const leftBorderColor = isEscalated
+                ? "rgba(239, 68, 68, 0.6)"
+                : isPendingDocs
+                  ? "rgba(167, 139, 250, 0.6)"
+                  : "transparent";
+
               return (
                 <div
                   key={claim.id}
                   onClick={() => setSelected(isSelected ? null : claim)}
                   style={{
                     padding: "14px 16px", borderRadius: 12, cursor: "pointer",
-                    background: isSelected ? "rgba(245,158,11,0.08)" : "rgba(17,24,39,0.7)",
+                    background: isSelected
+                      ? "rgba(245,158,11,0.08)"
+                      : isPendingDocs
+                        ? "rgba(167,139,250,0.04)"
+                        : isEscalated
+                          ? "rgba(239,68,68,0.04)"
+                          : "rgba(17,24,39,0.7)",
                     border: `1.5px solid ${isSelected ? colors.accent : colors.border}`,
+                    borderLeft: `4px solid ${isSelected ? colors.accent : leftBorderColor}`,
                     transition: "all 0.2s", opacity: isDone ? 0.4 : 1,
                   }}
                   onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.borderColor = `${colors.accent}66`; e.currentTarget.style.background = "rgba(245,158,11,0.04)"; } }}
-                  onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = "rgba(17,24,39,0.7)"; } }}
+                  onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = isPendingDocs ? "rgba(167,139,250,0.04)" : isEscalated ? "rgba(239,68,68,0.04)" : "rgba(17,24,39,0.7)"; } }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                     <div>
@@ -187,7 +267,36 @@ export default function ReviewQueue({ colors, getToken }) {
                       </span>
                     </div>
                   </div>
-                  {claim.reviewTriggers?.length > 0 && (
+
+                  {/* Escalation detail — show who it was escalated to */}
+                  {isEscalated && claim.escalateTo && (
+                    <div style={{
+                      marginTop: 8, padding: "6px 10px", borderRadius: 6,
+                      background: "rgba(239, 68, 68, 0.06)",
+                      border: "1px solid rgba(239, 68, 68, 0.15)",
+                      fontSize: 10, color: "#fca5a5", fontFamily: "IBM Plex Mono",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      <span style={{ fontSize: 12 }}>⤴</span>
+                      Escalated to: <strong style={{ color: "#f87171" }}>{claim.escalateTo}</strong>
+                    </div>
+                  )}
+
+                  {/* Pending docs detail */}
+                  {isPendingDocs && (
+                    <div style={{
+                      marginTop: 8, padding: "6px 10px", borderRadius: 6,
+                      background: "rgba(167, 139, 250, 0.06)",
+                      border: "1px solid rgba(167, 139, 250, 0.15)",
+                      fontSize: 10, color: "#c4b5fd", fontFamily: "IBM Plex Mono",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      <span style={{ fontSize: 12 }}>📄</span>
+                      Waiting for additional documentation
+                    </div>
+                  )}
+
+                  {claim.reviewTriggers?.length > 0 && !isEscalated && !isPendingDocs && (
                     <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {claim.reviewTriggers.slice(0, 2).map((t, i) => (
                         <span key={i} style={{
@@ -285,12 +394,89 @@ export default function ReviewQueue({ colors, getToken }) {
               <div style={{ fontSize: 14, fontWeight: 800, color: colors.text }}>{selected.confidence}%</div>
             </div>
             {selected.escalateTo && (
-              <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(17,24,39,0.8)", border: `1px solid ${colors.border}` }}>
-                <div style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: colors.muted, fontWeight: 700, marginBottom: 5, letterSpacing: "0.08em" }}>ESCALATE TO</div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#fcd34d" }}>{selected.escalateTo}</div>
+              <div style={{ padding: "10px 16px", borderRadius: 10, background: "rgba(239,68,68,0.06)", border: `1px solid rgba(239,68,68,0.25)` }}>
+                <div style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: "#ef4444", fontWeight: 700, marginBottom: 5, letterSpacing: "0.08em" }}>ESCALATED TO</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#fca5a5" }}>{selected.escalateTo}</div>
               </div>
             )}
           </div>
+
+          {/* ── Mark Docs Received (Fix 4) ── */}
+          {selected.review_status === "pending_documentation" && (
+            <div style={{
+              padding: "16px 20px", borderRadius: 12, marginBottom: 20,
+              background: "linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(99, 102, 241, 0.06))",
+              border: "1.5px solid rgba(167, 139, 250, 0.3)",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              animation: "slideIn 0.3s ease",
+            }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: "#a78bfa", fontWeight: 700, marginBottom: 4, letterSpacing: "0.06em" }}>
+                  📄 AWAITING DOCUMENTATION
+                </div>
+                <div style={{ fontSize: 13, color: "#c4b5fd", lineHeight: 1.5 }}>
+                  This claim is on hold until the requested documents are received.
+                </div>
+              </div>
+              <button
+                onClick={() => handleMarkDocsReceived(selected.id)}
+                disabled={markingDocsReceived === selected.id}
+                style={{
+                  padding: "10px 20px", borderRadius: 10, border: "none",
+                  background: markingDocsReceived === selected.id
+                    ? "rgba(167, 139, 250, 0.3)"
+                    : "linear-gradient(135deg, #a78bfa, #8b5cf6)",
+                  color: "#fff", fontSize: 13, fontWeight: 700,
+                  cursor: markingDocsReceived === selected.id ? "wait" : "pointer",
+                  fontFamily: "'Barlow', sans-serif",
+                  transition: "all 0.2s ease",
+                  boxShadow: "0 4px 16px rgba(167, 139, 250, 0.3)",
+                  whiteSpace: "nowrap",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}
+                onMouseEnter={e => {
+                  if (markingDocsReceived !== selected.id) {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(167, 139, 250, 0.4)";
+                  }
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 4px 16px rgba(167, 139, 250, 0.3)";
+                }}
+              >
+                {markingDocsReceived === selected.id ? (
+                  <>
+                    <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }}></span>
+                    Processing...
+                  </>
+                ) : (
+                  "📬 Mark Docs Received"
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Escalated Detail Banner */}
+          {selected.review_status === "escalated" && (
+            <div style={{
+              padding: "16px 20px", borderRadius: 12, marginBottom: 20,
+              background: "linear-gradient(135deg, rgba(239, 68, 68, 0.06), rgba(185, 28, 28, 0.06))",
+              border: "1.5px solid rgba(239, 68, 68, 0.3)",
+              animation: "slideIn 0.3s ease",
+            }}>
+              <div style={{
+                fontSize: 11, fontFamily: "IBM Plex Mono", color: "#ef4444",
+                fontWeight: 700, marginBottom: 4, letterSpacing: "0.06em",
+              }}>
+                ⤴ ESCALATED TO HIGHER OFFICIAL
+              </div>
+              <div style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>
+                This claim has been escalated {selected.escalateTo ? `to ${selected.escalateTo}` : "for senior review"}.
+                It requires attention from a higher authority before it can be resolved.
+              </div>
+            </div>
+          )}
 
           {/* Review Triggers */}
           {selected.reviewTriggers?.length > 0 && (
@@ -315,14 +501,30 @@ export default function ReviewQueue({ colors, getToken }) {
           {reviewDone[selected.id] ? (
             <div style={{
               padding: "20px 24px", borderRadius: 14, textAlign: "center",
-              background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
+              background: reviewDone[selected.id] === "request_docs"
+                ? "rgba(167,139,250,0.08)"
+                : "rgba(16,185,129,0.08)",
+              border: `1px solid ${reviewDone[selected.id] === "request_docs"
+                ? "rgba(167,139,250,0.25)"
+                : "rgba(16,185,129,0.25)"}`,
+              animation: "slideIn 0.3s ease",
             }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#10b981", marginBottom: 4 }}>
-                Review Submitted
+              <div style={{ fontSize: 28, marginBottom: 8 }}>
+                {reviewDone[selected.id] === "request_docs" ? "📄" : "✓"}
+              </div>
+              <div style={{
+                fontSize: 15, fontWeight: 700, marginBottom: 4,
+                color: reviewDone[selected.id] === "request_docs" ? "#a78bfa" : "#10b981",
+              }}>
+                {reviewDone[selected.id] === "request_docs"
+                  ? "Documents Requested"
+                  : "Review Submitted"}
               </div>
               <div style={{ fontSize: 12, color: colors.muted }}>
-                Action: <span style={{ color: "#10b981", fontWeight: 700 }}>{reviewDone[selected.id]}</span>
+                Action: <span style={{
+                  color: reviewDone[selected.id] === "request_docs" ? "#a78bfa" : "#10b981",
+                  fontWeight: 700,
+                }}>{reviewDone[selected.id]}</span>
               </div>
             </div>
           ) : (

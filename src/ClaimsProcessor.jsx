@@ -213,8 +213,22 @@ export default function ClaimsProcessor() {
   const [savedClaimId, setSavedClaimId] = useState(null);
   const [manualReviewOpen, setManualReviewOpen] = useState(false); // optional review for STP claims
 
+  const [reviewQueueCount, setReviewQueueCount] = useState(0);
+
   const [ruleConfig, setRuleConfig] = useState({});
   const fileRef = useRef();
+
+  // Review status display metadata
+  const REVIEW_STATUS_META = {
+    auto_approved:        { label: "Auto",          color: "#10b981", bg: "rgba(16,185,129,0.12)",  border: "rgba(16,185,129,0.3)" },
+    approved:             { label: "Approved",      color: "#10b981", bg: "rgba(16,185,129,0.12)",  border: "rgba(16,185,129,0.3)" },
+    review_required:      { label: "Review",        color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  border: "rgba(245,158,11,0.3)" },
+    under_review:         { label: "Reviewing",     color: "#93c5fd", bg: "rgba(147,197,253,0.12)", border: "rgba(147,197,253,0.3)" },
+    escalated:            { label: "Escalated",     color: "#ef4444", bg: "rgba(239,68,68,0.12)",   border: "rgba(239,68,68,0.3)" },
+    pending_documentation:{ label: "Awaiting Docs", color: "#a78bfa", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.3)" },
+    pending:              { label: "Pending",       color: "#6b7280", bg: "rgba(107,114,128,0.12)", border: "rgba(107,114,128,0.3)" },
+    rejected:             { label: "Rejected",      color: "#ef4444", bg: "rgba(239,68,68,0.12)",   border: "rgba(239,68,68,0.3)" },
+  };
 
   // Generate or retrieve a unique session token for this browser tab
   const getSessionToken = () => {
@@ -535,7 +549,7 @@ export default function ClaimsProcessor() {
             console.warn("⚠️ [Session] Could not register session:", regErr);
           }
 
-          // Step 3: Fetch History & Rules
+          // Step 3: Fetch History, Rules & Review Queue Count
           const historyPromise = fetch(`${apiUrl}/claims-history`, {
             headers: { "Authorization": `Bearer ${token}` }
           }).then(res => res.json());
@@ -544,7 +558,11 @@ export default function ClaimsProcessor() {
             headers: { "Authorization": `Bearer ${token}` }
           }).then(res => res.json());
 
-          const [historyData, rulesData] = await Promise.all([historyPromise, rulesPromise]);
+          const reviewQueuePromise = fetch(`${apiUrl}/review-queue`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          }).then(res => res.json()).catch(() => ({ status: "error" }));
+
+          const [historyData, rulesData, reviewQueueData] = await Promise.all([historyPromise, rulesPromise, reviewQueuePromise]);
 
           if (historyData.status === "success" && historyData.history) {
             console.log(`✅ [History] Fetched ${historyData.history.length} claims from DB`);
@@ -562,6 +580,11 @@ export default function ClaimsProcessor() {
               }
             });
             setRuleConfig(initialConfig);
+          }
+
+          if (reviewQueueData.status === "success" && reviewQueueData.queue) {
+            setReviewQueueCount(reviewQueueData.queue.length);
+            console.log(`✅ [ReviewQueue] ${reviewQueueData.queue.length} claims pending review`);
           }
 
         } catch (err) {
@@ -832,8 +855,28 @@ export default function ClaimsProcessor() {
                     color: view === 'review' ? colors.bg : "#f59e0b",
                     fontSize: 11, fontWeight: 800, cursor: "pointer", transition: "all 0.3s ease",
                     outline: view !== 'review' ? "1px solid rgba(245,158,11,0.35)" : "none",
+                    position: "relative",
+                    display: "inline-flex", alignItems: "center", gap: 6,
                   }}
-                >REVIEW QUEUE</button>
+                >
+                  REVIEW QUEUE
+                  {reviewQueueCount > 0 && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 900, fontFamily: "IBM Plex Mono",
+                      minWidth: 18, height: 18, borderRadius: 9,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      background: view === 'review'
+                        ? "rgba(0,0,0,0.3)"
+                        : "linear-gradient(135deg, #f59e0b, #f97316)",
+                      color: view === 'review' ? colors.bg : "#000",
+                      padding: "0 5px",
+                      boxShadow: view === 'review' ? "none" : "0 2px 8px rgba(245, 158, 11, 0.4)",
+                      animation: "pulse 2s infinite",
+                    }}>
+                      {reviewQueueCount}
+                    </span>
+                  )}
+                </button>
               </div>
 
               <UserButton afterSignOutUrl="/" appearance={clerkAppearance} />
@@ -2010,9 +2053,26 @@ export default function ClaimsProcessor() {
                             </span>
                           </div>
                           <div style={{ color: "#d1d5db", fontWeight: 500, marginBottom: 2 }}>{c.claimant}</div>
-                          <div style={{ color: colors.muted, fontSize: 10 }}>
-                            {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                            <div style={{ color: colors.muted, fontSize: 10 }}>
+                              {c.claim} {c.amount ? `· $${Number(c.amount).toLocaleString()}` : ""} · {c.confidence}% pass
+                            </div>
                           </div>
+                          {/* Review Status Badge (Fix 3) */}
+                          {c.review_status && REVIEW_STATUS_META[c.review_status] && (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{
+                                fontSize: 8, fontWeight: 700, fontFamily: "IBM Plex Mono",
+                                letterSpacing: "0.06em",
+                                padding: "2px 7px", borderRadius: 4,
+                                background: REVIEW_STATUS_META[c.review_status].bg,
+                                border: `1px solid ${REVIEW_STATUS_META[c.review_status].border}`,
+                                color: REVIEW_STATUS_META[c.review_status].color,
+                              }}>
+                                {REVIEW_STATUS_META[c.review_status].label.toUpperCase()}
+                              </span>
+                            </div>
+                          )}
                           {c.submitterEmail && (
                             <div style={{ color: colors.accent, fontSize: 10, marginTop: 4, fontFamily: "IBM Plex Mono", fontWeight: 600 }}>
                               Submitted by: {c.submitterEmail}

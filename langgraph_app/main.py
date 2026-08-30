@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from .graph.graph import create_graph
-from .services.blob_storage import upload_to_blob
+from .services.blob_storage import upload_to_blob, generate_read_sas_url
 from .services.database import (
     save_claim_to_db, get_claims_history, backfill_orphaned_claims,
     get_all_rules, upsert_rule, delete_rule,
@@ -560,7 +560,7 @@ async def process_claim(request: ClaimRequest, user_info: dict = Depends(get_cur
                 if errors:
                     yield f"data: {json.dumps({'node': 'background_save', 'status': 'save_error', 'message': '; '.join(errors)})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'saved', 'blob_uri': blob_uri, 'claim_id': claim_id})}\n\n"
+                    yield f"data: {json.dumps({'node': 'background_save', 'status': 'saved', 'blob_uri': generate_read_sas_url(blob_uri) if blob_uri else None, 'claim_id': claim_id})}\n\n"
                 
         except Exception as e:
             print(f"Graph Execution Error: {str(e)}")

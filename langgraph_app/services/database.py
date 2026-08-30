@@ -8,6 +8,7 @@ import psycopg2
 import psycopg2.pool
 import asyncpg
 from dotenv import load_dotenv
+from .blob_storage import generate_read_sas_url
 
 load_dotenv(override=True)
 
@@ -492,8 +493,8 @@ def get_claims_history(user_id: str, is_admin: bool = False) -> list:
                 "confidence": evaluation.get("confidence", 0),
                 "extracted": extracted,
                 "evaluation": evaluation,
-                "blob_uri": row[4],
-                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf",
+                "blob_uri": generate_read_sas_url(row[4]) if row[4] else None,
+                "fileName": row[4].split("?")[0].split("/")[-1] if row[4] else "document.pdf",
                 "submitterEmail": row[7] if row[7] else ""
             })
             
@@ -564,8 +565,8 @@ def get_review_queue_claims(user_id: str, is_admin: bool = False) -> list:
                 "escalationReasons": evaluation.get("escalationReasons", []),
                 "extracted": extracted,
                 "evaluation": evaluation,
-                "blob_uri": row[4],
-                "fileName": row[4].split("/")[-1] if row[4] else "document.pdf",
+                "blob_uri": generate_read_sas_url(row[4]) if row[4] else None,
+                "fileName": row[4].split("?")[0].split("/")[-1] if row[4] else "document.pdf",
                 "submitterEmail": row[8] if row[8] else "",
             })
 

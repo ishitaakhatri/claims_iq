@@ -1,6 +1,7 @@
 import os
 import base64
 import uuid
+from urllib.parse import urlparse
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 
@@ -46,20 +47,52 @@ def upload_to_blob(file_data_b64: str, file_name: str) -> str:
     account_key = dict(item.split("=", 1) for item in connection_string.split(";") if item).get("AccountKey")
     account_name = blob_service_client.account_name
 
-    if account_key and account_name:
-        sas_token = generate_blob_sas(
-            account_name=account_name,
-            container_name=container_name,
-            blob_name=blob_name,
-            account_key=account_key,
-            permission=BlobSasPermissions(read=True),
-            expiry=datetime.now(timezone.utc) + timedelta(days=7)
-        )
-        blob_url = f"{blob_client.url}?{sas_token}"
-    else:
-        # Fallback to the regular URL if SAS generation fails
-        blob_url = blob_client.url
-        print("[Blob Storage] Warning: Could not generate SAS token. Using raw URL.")
+    # Just return the base URL; SAS tokens will be generated dynamically on read
+    blob_url = blob_client.url
 
     print(f"[Blob Storage] Uploaded: {blob_url}")
+    return blob_url
+
+def generate_read_sas_url(blob_url: str) -> str:
+    """
+    Takes a blob URL (with or without an existing SAS token) and returns 
+    the URL with a freshly generated 7-day SAS token.
+    """
+    if not blob_url:
+        return blob_url
+        
+    connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
+
+    if not connection_string or not container_name:
+        return blob_url
+        
+    try:
+        # Strip any existing query params (e.g. old expired SAS token)
+        base_url = blob_url.split("?")[0]
+        
+        parsed = urlparse(base_url)
+        path_parts = parsed.path.lstrip("/").split("/")
+        if len(path_parts) >= 2:
+            blob_name = "/".join(path_parts[1:])
+        else:
+            return blob_url
+            
+        account_key = dict(item.split("=", 1) for item in connection_string.split(";") if item).get("AccountKey")
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        account_name = blob_service_client.account_name
+        
+        if account_key and account_name:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=container_name,
+                blob_name=blob_name,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                expiry=datetime.now(timezone.utc) + timedelta(days=7)
+            )
+            return f"{base_url}?{sas_token}"
+    except Exception as e:
+        print(f"[Blob Storage] Error generating SAS token for URL {blob_url}: {e}")
+        
     return blob_url
